@@ -1,4 +1,6 @@
 import {
+  AGENT_INFO,
+  type AgentProvider,
   type AiVerdict,
   type Conclusion,
   countBySeverity,
@@ -185,7 +187,7 @@ export function buildSummaryComment(
   lines.push(
     `[View full report →](${ctx.runUrl})`,
     "",
-    `<sub>Scanners: Trivy · Opengrep · Gitleaks${ctx.agent ? ` · AI: ${ctx.agent === "claude" ? "Claude Code" : "Codex"}` : ""}. Re-run from the Checks tab or the dashboard.</sub>`,
+    `<sub>Scanners: Trivy · Opengrep · Gitleaks${ctx.agent ? ` · AI: ${AGENT_INFO[ctx.agent as AgentProvider].label}` : ""}. Re-run from the Checks tab or the dashboard.</sub>`,
   );
   return lines.filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
 }

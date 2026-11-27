@@ -5,6 +5,8 @@ import {
   AgentReviewSchema,
   type CredentialKind,
   MIN_AI_CONFIDENCE,
+  REVIEW_FOCUS_INFO,
+  type ReviewFocus,
 } from "@openvscan/core";
 import { REPO_DIR } from "./scanners";
 
@@ -23,6 +25,8 @@ export const PROMPT_PATH = `${WORK_DIR}/PROMPT.md`;
 export const DIFF_PATH = `${WORK_DIR}/pr.diff`;
 export const FINDINGS_PATH = `${WORK_DIR}/scanner-findings.json`;
 export const REVIEW_PATH = `${WORK_DIR}/review.json`;
+/** Codex's config dir; holds the placeholder auth.json for a ChatGPT login. */
+export const CODEX_HOME = "/workspace/.codex";
 
 /** Placeholder the CLI sends; the egress proxy swaps in the real secret. */
 const PLACEHOLDER = "openvscan-injected-at-egress";
@@ -38,6 +42,9 @@ interface PromptContext {
   scannerFindingCount: number;
   /** Repo owner's extra guidance (trusted: set in the dashboard). */
   instructions: string | null;
+  focus: ReviewFocus[];
+  /** Globs whose findings are dropped; the agent can skip them. */
+  ignorePaths: string[];
 }
 
 function clip(s: string, max: number): string {
@@ -94,7 +101,7 @@ Do not report: denial of service or resource exhaustion, ReDoS, missing rate lim
 - \`line\`/\`endLine\` refer to the checked-out (head) files and should span the vulnerable statement (<= 10 lines).
 - \`suggestion\` only when the fix is small and certain: it replaces exactly \`line\`..\`endLine\`, keeps indentation, no diff markers.
 - Write plainly: lead with the trigger, no praise, no filler.
-${c.instructions?.trim() ? `\n## Repository owner's instructions (trusted)\n${clip(c.instructions.trim(), 4000)}\n` : ""}
+${c.ignorePaths.length ? `- Skip files matching: ${c.ignorePaths.map((p) => `\`${p}\``).join(", ")}. Findings there are discarded.\n` : ""}${c.focus.length ? `\n## Focus areas\nThe owner asked for extra attention on:\n${c.focus.map((f) => `- ${REVIEW_FOCUS_INFO[f].prompt}`).join("\n")}\n` : ""}${c.instructions?.trim() ? `\n## Repository owner's instructions (trusted)\n${clip(c.instructions.trim(), 4000)}\n` : ""}
 ## Output
 Write one JSON object to \`${REVIEW_PATH}\`, nothing else in that file:
 
@@ -134,10 +141,16 @@ interface AgentInvocation {
   env: Record<string, string>;
 }
 
+/**
+ * `standIn` is what the CLI holds in place of the credential: a backend's
+ * own placeholder (Daytona secrets), or by default the fixed placeholder
+ * `Outbound` swaps.
+ */
 export function agentInvocation(
   provider: AgentProvider,
   kind: CredentialKind,
   model: string | null,
+  standIn?: string,
 ): AgentInvocation {
   if (provider === "claude") {
     const env: Record<string, string> = {
@@ -148,8 +161,8 @@ export function agentInvocation(
       DISABLE_AUTOUPDATER: "1",
       DISABLE_TELEMETRY: "1",
     };
-    if (kind === "claude_oauth_token") env.CLAUDE_CODE_OAUTH_TOKEN = PLACEHOLDER;
-    else env.ANTHROPIC_API_KEY = PLACEHOLDER;
+    if (kind === "claude_oauth_token") env.CLAUDE_CODE_OAUTH_TOKEN = standIn ?? PLACEHOLDER;
+    else env.ANTHROPIC_API_KEY = standIn ?? PLACEHOLDER;
     return {
       argv: [
         "claude",
@@ -166,6 +179,36 @@ export function agentInvocation(
       env,
     };
   }
+  if (provider === "cursor") {
+    // The workflow adds CURSOR_AUTH_TOKEN: a placeholder for the access token
+    // the engine got for the user's API key (see cursor.ts).
+    return {
+      argv: [
+        "cursor-agent",
+        "--print",
+        "--output-format",
+        "stream-json",
+        // No approval prompts and no nested sandbox: this container is the
+        // boundary, as for the other agents.
+        "--force",
+        "--sandbox",
+        "disabled",
+        "--trust",
+        "--workspace",
+        WORK_DIR,
+        ...(model ? ["--model", model] : []),
+        SHORT_TASK,
+      ],
+      env: {},
+    };
+  }
+  // CODEX_HOME holds only the placeholder auth.json the engine writes for a
+  // ChatGPT login; the other kinds authenticate through env placeholders.
+  const env: Record<string, string> = { CODEX_HOME };
+  if (kind === "codex_access_token") env.CODEX_ACCESS_TOKEN = standIn ?? `at-${PLACEHOLDER}`;
+  else if (kind === "openai_api_key") {
+    Object.assign(env, { OPENAI_API_KEY: standIn ?? PLACEHOLDER, CODEX_API_KEY: standIn ?? PLACEHOLDER });
+  }
   return {
     argv: [
       "codex",
@@ -181,10 +224,12 @@ export function agentInvocation(
       "check_for_update_on_startup=false",
       "--config",
       "features.plugins=false",
+      "--config",
+      'cli_auth_credentials_store="file"',
       "--",
       SHORT_TASK,
     ],
-    env: { OPENAI_API_KEY: PLACEHOLDER, CODEX_API_KEY: PLACEHOLDER },
+    env,
   };
 }
 
@@ -203,7 +248,7 @@ export function agentFailure(
     } catch {
       continue;
     }
-    if (provider === "claude" && ev.type === "result" && ev.is_error) {
+    if (provider !== "codex" && ev.type === "result" && ev.is_error) {
       msg = String(ev.result ?? ev.subtype ?? "error");
     }
     if (provider === "codex") {
@@ -212,6 +257,13 @@ export function agentFailure(
         msg = String((ev.error as { message?: string } | undefined)?.message ?? "turn failed");
       }
     }
+  }
+  // Codex's first ChatGPT call is the workspace lookup, so a rejected login fails there.
+  if (msg?.includes("workspace routing discovery failed")) {
+    msg = "ChatGPT did not accept the Codex login. Sign in again and paste a new auth.json in Settings → AI agents.";
+  }
+  if (provider === "cursor" && /authentication is invalid|agent login/i.test(msg ?? stderr)) {
+    msg = "Cursor did not accept the access token for your API key. Create a new user API key and save it in Settings → AI agents.";
   }
   const tail = stderr.trim().split("\n").slice(-5).join("\n");
   return clip(msg ?? `${provider} exited with ${exitCode}${tail ? `: ${tail}` : ""}`, 1000);

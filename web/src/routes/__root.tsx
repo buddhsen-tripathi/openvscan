@@ -12,7 +12,7 @@ import appCss from "../styles.css?url";
 
 const siteTitle = "OpenVScan: security review for every pull request";
 const siteDescription =
-  "Open-source security review for GitHub pull requests. Trivy, Opengrep and Gitleaks scan each PR, your own Claude Code or Codex agent triages the findings, and results land as a check and PR comments. Runs on Cloudflare.";
+  "Open-source security review for GitHub pull requests. Trivy, Opengrep and Gitleaks scan each PR, your own Claude Code, Codex or Cursor agent triages the findings, and results land as a check and PR comments. Runs on Cloudflare.";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -25,7 +25,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         {
           name: "keywords",
           content:
-            "OpenVScan, pull request security review, SAST, secret scanning, Claude Code, Codex, Cloudflare",
+            "OpenVScan, pull request security review, SAST, secret scanning, Claude Code, Codex, Cursor, Cloudflare",
         },
         { name: "creator", content: "Buddhsen Tripathi" },
         { property: "og:title", content: siteTitle },

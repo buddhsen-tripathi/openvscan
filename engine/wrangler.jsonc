@@ -12,7 +12,18 @@
     // Container size for review sandboxes (lite|basic|standard-1..4).
     "SANDBOX_INSTANCE": "standard-2",
     // Local smoke-test routes (/__dev/*). Never enable in production.
-    "DEV_ROUTES": "false"
+    "DEV_ROUTES": "false",
+    // Where review sandboxes run: "cloudflare" or "daytona". Empty picks
+    // Daytona when the DAYTONA_API_KEY secret is set, else Cloudflare.
+    "SANDBOX_PROVIDER": "",
+    // Daytona only. "hybrid": scanners on Daytona, AI review on Cloudflare
+    // (any Daytona tier). "full": everything on Daytona (Tier 3+).
+    "DAYTONA_MODE": "hybrid",
+    // Daytona snapshot built from container/Dockerfile (scripts/daytona-snapshot.sh).
+    "DAYTONA_SNAPSHOT": "openvscan-sandbox",
+    "DAYTONA_API_URL": "https://app.daytona.io/api",
+    // Daytona region ("us", "eu"); empty uses the organization default.
+    "DAYTONA_TARGET": ""
   },
   "secrets": {
     "required": ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY", "CREDENTIALS_KEY"]

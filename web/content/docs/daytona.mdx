@@ -1,0 +1,87 @@
+---
+title: Run sandboxes on Daytona
+description: Run review sandboxes on your own Daytona account instead of Cloudflare Containers, in hybrid or full mode.
+---
+
+By default each review runs in a Cloudflare container. You can run sandboxes on [Daytona](https://www.daytona.io) instead, with your own Daytona API key. The Workers, D1, R2 and the workflow stay on Cloudflare either way.
+
+The choice is per deployment:
+
+| `SANDBOX_PROVIDER` | `DAYTONA_API_KEY` | Sandboxes run on |
+|--------------------|-------------------|------------------|
+| empty (default) | not set | Cloudflare |
+| empty (default) | set | Daytona |
+| `cloudflare` | any | Cloudflare |
+| `daytona` | set | Daytona |
+
+## Modes
+
+Daytona has two modes, set with `DAYTONA_MODE`.
+
+| Mode | Daytona tier | Checkout and scanners | AI review |
+|------|--------------|-----------------------|-----------|
+| `hybrid` (default) | Any | Daytona | Cloudflare container, behind `Outbound` |
+| `full` | Tier 3 or 4 | Daytona | Daytona |
+
+**Hybrid** works on every Daytona tier. Checkout and scanners do not run the repository's code and never hold a secret, so they can run under Daytona's default network rules. The AI review moves to a Cloudflare container only for its own step, with the same locked-down egress as a Cloudflare-only deployment. A repository with **AI reviewer** set to **None** never starts a Cloudflare container.
+
+**Full** runs the whole review on Daytona. It needs a Tier 3 or 4 organization, because only those tiers can change a sandbox's network allowlist while it runs. On Tier 1 and 2, every sandbox can reach a fixed list of services that includes GitHub and other hosts, so a prompt-injected agent could send code out. Full mode would not be safe there.
+
+## Set it up
+
+1. **Create an API key** in the Daytona dashboard under **API Keys**. Hybrid needs the sandbox permissions. Full mode also needs `manage:secrets`.
+2. **Build and push the snapshot.** Sandboxes start from a snapshot of `engine/container/Dockerfile`, the same image Cloudflare runs. With Docker running and the Daytona CLI signed in (`daytona login`):
+
+   ```bash
+   engine/scripts/daytona-snapshot.sh
+   ```
+
+   It prints the snapshot name, for example `openvscan-sandbox-202611271200`. Each sandbox gets 2 vCPU, 4 GB of memory and 10 GB of disk. Override them with `DAYTONA_CPU`, `DAYTONA_MEMORY` and `DAYTONA_DISK`.
+3. **Configure the engine.** In `engine/wrangler.jsonc`, set `DAYTONA_SNAPSHOT` to the snapshot name. Set `DAYTONA_MODE` to `full` for full mode. Then add the key:
+
+   ```bash
+   cd engine
+   npx wrangler secret put DAYTONA_API_KEY
+   ```
+4. **Deploy** with `pnpm run deploy`, and open a pull request to check that a review runs.
+
+Rebuild the snapshot whenever you change the Dockerfile or upgrade OpenVScan, and update `DAYTONA_SNAPSHOT`. Hybrid deployments still deploy the Cloudflare container for the AI step, so Docker is still needed to deploy.
+
+## How a review runs on Daytona
+
+- **Sandbox.** One sandbox per review, named `openvscan-<review id>`, created as `root` from the snapshot. The engine deletes it when the review ends, fails or is cancelled. As a backstop, Daytona stops it after 30 idle minutes, deletes it when it stops, and deletes it 3 hours after creation in any case.
+- **Checkout.** The engine asks GitHub for a tarball of the head commit and passes the sandbox a `codeload.github.com` URL. For a private repository the URL holds a token that works only for that archive and expires within minutes. No GitHub token enters the sandbox, and the checkout has no `.git` directory.
+- **Scanners.** They run as on Cloudflare. Trivy updates its database if it can reach its mirrors and otherwise uses the one in the snapshot.
+- **Long commands** run detached and the engine polls them, so no request stays open for the length of a scan.
+
+## Credentials in full mode
+
+In full mode the agent's credential is a [Daytona secret](https://www.daytona.io/docs/en/secrets/). The sandbox holds only Daytona's placeholder, and Daytona's egress proxy swaps in the real value on requests to the model API's hosts and nowhere else. The secret is created when the AI review starts and deleted as soon as it stops.
+
+| Credential | Secret sent to, and the only hosts reachable |
+|------------|----------------------------------------------|
+| Claude | `api.anthropic.com` |
+| OpenAI API key | `api.openai.com` |
+| ChatGPT login | `chatgpt.com` |
+| Codex access token | `chatgpt.com`, `auth.openai.com` |
+| Cursor | `*.cursor.sh` |
+
+Compared with `Outbound` on Cloudflare:
+
+- **Daytona holds the credential** for the length of the AI step, in your Daytona organization.
+- **Rules are per host, not per path.** `Outbound` allows only the Codex endpoints on `chatgpt.com` and refuses Cursor's sign-in endpoints. On Daytona the agent can reach any path on those hosts with your credential, but it still cannot reach any other host.
+- **Placeholders keep a visible part.** Daytona swaps a placeholder literally, so the agent sees a key's public prefix such as `sk-ant-api`, or a token's header and claims without its signature. Neither works on its own.
+
+## Cost
+
+Daytona bills each sandbox per second of vCPU, memory and disk. A review that scans for five minutes on the default size costs about one or two US cents of Daytona usage. In hybrid mode, Cloudflare bills only the AI step's container time. Check Daytona's pricing page for current rates.
+
+## Local testing
+
+With `DEV_ROUTES=true` and `DAYTONA_API_KEY` in `engine/.dev.vars`, run the scanners on Daytona against a public repository:
+
+```bash
+curl -X POST localhost:8787/__dev/daytona -d '{"repo":"octocat/Hello-World"}'
+```
+
+The sandbox is deleted afterwards unless you pass `"keep":"true"`.

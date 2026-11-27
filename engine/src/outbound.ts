@@ -1,5 +1,6 @@
 import type { CredentialKind } from "@openvscan/core";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { TRIVY_DB_HOSTS } from "./box";
 
 /**
  * Egress policy for a review sandbox, passed as trusted `props` when the
@@ -26,15 +27,15 @@ export type EgressPolicy =
   | {
       phase: "agent";
       kind: CredentialKind;
+      /** API key or bearer access token. */
       secret: string;
+      /** ChatGPT workspace the access token belongs to (ChatGPT login only). */
+      accountId?: string;
+      /** The stand-in token the sandbox holds, swapped wherever it appears (Cursor only). */
+      placeholder?: string;
     };
 
-/** Hosts Trivy fetches its vulnerability DB from (OCI artifacts, GET only). */
-const TRIVY_DB_HOSTS = new Set([
-  "mirror.gcr.io",
-  "ghcr.io",
-  "pkg-containers.githubusercontent.com",
-]);
+const TRIVY_DB = new Set(TRIVY_DB_HOSTS);
 
 const deny = (why: string) => {
   // Visible in Workers observability: what a sandbox tried and was refused.
@@ -55,7 +56,7 @@ export class Outbound extends WorkerEntrypoint<Env, EgressPolicy> {
       case "checkout":
         return this.checkout(request, url, policy);
       case "scan":
-        if (TRIVY_DB_HOSTS.has(url.hostname) && (request.method === "GET" || request.method === "HEAD")) {
+        if (TRIVY_DB.has(url.hostname) && (request.method === "GET" || request.method === "HEAD")) {
           return fetch(request);
         }
         return deny(`${url.hostname} is not reachable while scanning`);
@@ -116,6 +117,48 @@ export class Outbound extends WorkerEntrypoint<Env, EgressPolicy> {
           return deny(`${url.hostname} is not reachable during the AI review`);
         }
         headers.set("authorization", `Bearer ${policy.secret}`);
+        break;
+      }
+      case "codex_chatgpt_login":
+      case "codex_access_token": {
+        // ChatGPT-plan Codex talks to the Codex backend on chatgpt.com, after
+        // one account lookup that picks the workspace to route to. An access
+        // token is first resolved to its account via whoami. Token refresh
+        // (auth.openai.com/oauth) is left to the engine, so it's denied.
+        const backend =
+          url.hostname === "chatgpt.com" &&
+          (url.pathname.startsWith("/backend-api/codex/") ||
+            (request.method === "GET" && url.pathname === "/backend-api/wham/accounts/check"));
+        const whoami =
+          policy.kind === "codex_access_token" &&
+          url.hostname === "auth.openai.com" &&
+          request.method === "GET" &&
+          url.pathname === "/api/accounts/v1/user-auth-credential/whoami";
+        if (!backend && !whoami) {
+          // Codex falls back to the plain API when whoami rejects the token.
+          if (policy.kind === "codex_access_token" && url.hostname === "api.openai.com") {
+            return deny("OpenAI did not accept the Codex access token");
+          }
+          return deny(`${url.hostname}${url.pathname} is not reachable during the AI review`);
+        }
+        headers.set("authorization", `Bearer ${policy.secret}`);
+        if (policy.accountId) headers.set("chatgpt-account-id", policy.accountId);
+        break;
+      }
+      case "cursor_api_key": {
+        // Cursor's API lives on *.cursor.sh. Its token endpoints are denied:
+        // with the real token swapped in they'd hand a fresh one to the sandbox.
+        const host = url.hostname;
+        if (host !== "cursor.sh" && !host.endsWith(".cursor.sh")) {
+          return deny(`${host} is not reachable during the AI review`);
+        }
+        if (/^\/(auth|oauth)\//.test(url.pathname)) {
+          return deny(`${host}${url.pathname}: token endpoints are handled by the engine`);
+        }
+        if (!policy.placeholder) return deny("missing Cursor placeholder");
+        for (const [name, value] of request.headers) {
+          if (value.includes(policy.placeholder)) headers.set(name, value.replaceAll(policy.placeholder, policy.secret));
+        }
         break;
       }
       default:

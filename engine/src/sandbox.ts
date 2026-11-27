@@ -1,5 +1,7 @@
 import { Files, SandboxFileError } from "@cloudflare/sandbox";
 import { DurableObject } from "cloudflare:workers";
+import { type Box, type ExecOptions, type ExecResult, OUTPUT_CAP, sandboxConfig, type TaskState } from "./box";
+import { DaytonaBox, daytonaSettings } from "./daytona";
 import type { EgressPolicy } from "./outbound";
 
 /**
@@ -24,24 +26,49 @@ const TRUST_ENV: Record<string, string> = {
 
 const INACTIVITY_MS = 20 * 60 * 1000;
 const KEEPALIVE_MS = 60 * 1000;
-const OUTPUT_CAP = 64 * 1024;
 const TASK_KEY = "task-dir";
 
-interface ExecResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-type TaskState =
-  | { state: "none" }
-  | { state: "running" }
-  | { state: "exited"; exitCode: number }
-  | { state: "lost" };
-
-/** The sandbox of one run (or dev session), addressed by name. */
+/** The Cloudflare sandbox of one run (or dev session), addressed by name. */
 export function sandboxFor(env: Env, name: string): DurableObjectStub<ScanSandbox> {
   return (env.SANDBOX as DurableObjectNamespace<ScanSandbox>).getByName(name);
+}
+
+/** A Cloudflare container sandbox behind the backend-neutral `Box` interface. */
+export function cloudflareBox(env: Env, name: string): Box {
+  const stub = () => sandboxFor(env, name);
+  return {
+    backend: "cloudflare",
+    start: () => stub().start(),
+    setEgress: (p) => stub().setEgress(p),
+    lockEgress: () => stub().lockEgress(),
+    exec: (argv, opts) => stub().exec(argv, opts),
+    readText: (path, max) => stub().readText(path, max),
+    writeText: (path, content) => stub().writeText(path, content),
+    exists: (path) => stub().exists(path),
+    startTask: (dir, argv, opts) => stub().startTask(dir, argv, opts),
+    taskState: (dir) => stub().taskState(dir),
+    killTask: (dir) => stub().killTask(dir),
+    // `Outbound` swaps fixed placeholders; nothing to set up per run.
+    credentialStandIn: async () => null,
+    destroy: () => stub().destroy(),
+  };
+}
+
+/**
+ * The sandboxes of one run: `scan` for checkout and scanners, `agent` for
+ * the AI review. They are the same sandbox except in Daytona's hybrid mode,
+ * where scanners run on Daytona and the agent on Cloudflare.
+ */
+export function runBoxes(env: Env, runId: string): { scan: Box; agent: Box; all: Box[] } {
+  const cfg = sandboxConfig(env);
+  if (cfg.provider === "cloudflare") {
+    const box = cloudflareBox(env, runId);
+    return { scan: box, agent: box, all: [box] };
+  }
+  const daytona = new DaytonaBox(daytonaSettings(env), runId);
+  if (cfg.mode === "full") return { scan: daytona, agent: daytona, all: [daytona] };
+  const cf = cloudflareBox(env, runId);
+  return { scan: daytona, agent: cf, all: [daytona, cf] };
 }
 
 export class ScanSandbox extends DurableObject<Env> {
@@ -121,10 +148,7 @@ export class ScanSandbox extends DurableObject<Env> {
   }
 
   /** Run a command to completion. Output is truncated; use files for data. */
-  async exec(
-    argv: string[],
-    opts: { cwd?: string; env?: Record<string, string>; timeoutSec?: number } = {},
-  ): Promise<ExecResult> {
+  async exec(argv: string[], opts: ExecOptions = {}): Promise<ExecResult> {
     const cmd = opts.timeoutSec
       ? ["timeout", "-k", "15", String(opts.timeoutSec), ...argv]
       : argv;
