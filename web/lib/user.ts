@@ -1,14 +1,24 @@
-import { getRequestHeaders } from "@tanstack/react-start/server";
-import { getAuth } from "@/lib/auth";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { currentSession } from "@/lib/auth";
 
-/** The current request's session (server only). */
-export function currentSession() {
-  return getAuth().api.getSession({ headers: getRequestHeaders() });
+/**
+ * Who a server function acts for: the signed-in browser session, or the user
+ * an MCP request authenticated as (set with `runAsUser`, only by /mcp after
+ * verifying its bearer token).
+ */
+const actingUser = new AsyncLocalStorage<string>();
+
+export function runAsUser<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+  return actingUser.run(userId, fn);
 }
+
+export { currentSession };
 
 /** Resolve the signed-in user id, or throw (server functions surface it as an error). */
 export async function requireUserId(): Promise<string> {
+  const acting = actingUser.getStore();
+  if (acting) return acting;
   const session = await currentSession();
   if (!session) throw new Error("Unauthorized");
-  return session.user.id;
+  return session.userId;
 }

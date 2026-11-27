@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import Link from "@/components/AppLink";
 import { BrushPanel } from "@/components/brand/BrushPanel";
 import { Wordmark } from "@/components/brand/Mark";
@@ -6,8 +6,9 @@ import { Notice } from "@/components/dashboard/ui";
 import { Github } from "@/components/icons";
 import { InlineComment, TriageCard } from "@/components/landing/mocks";
 import { REPO_URL } from "@/components/site";
-import { Input } from "@/components/ui/Input";
-import { signIn } from "@/lib/auth-client";
+import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/Input";
+import { resendEmailCode, verifyEmailCode } from "@/lib/auth-server";
 import { cn } from "@/lib/utils";
 
 interface AuthShellProps {
@@ -95,29 +96,27 @@ export function AuthShell({
   );
 }
 
-/** Plain-language text for the `?error=` codes Better Auth's OAuth flow returns. */
+/** Plain-language text for the `?error=` codes /api/auth/callback sends. */
 export function oauthErrorMessage(code: string | undefined): string | null {
   if (!code) return null;
   switch (code) {
-    case "account_not_linked":
-      return "An OpenVScan account already uses this email, but the email hasn't been verified, so GitHub can't be joined to it automatically. Sign in with your email and password below, then link GitHub in Settings → Sign-in methods.";
-    case "email_not_found":
-      return "GitHub didn't share an email address. Make an email visible on GitHub (or allow email access when asked) and try again.";
-    case "access_denied":
+    case "state":
+      return "Your sign-in link expired or was opened in another tab. Please try again.";
+    case "denied":
       return "GitHub sign-in was cancelled.";
-    case "account_already_linked_to_different_user":
-      return "That GitHub account is already linked to a different OpenVScan account.";
-    case "signup_disabled":
-      return "New sign-ups are disabled on this deployment.";
+    case "github":
+      return "GitHub sign-in didn't complete. Try again, or use your email below.";
+    case "missing_code":
+    case "signin_failed":
+      return "We couldn't sign you in with GitHub. Please try again.";
     default:
-      return `GitHub sign-in didn't complete (${code.replace(/[^\w-]/g, "").slice(0, 60)}). Please try again.`;
+      return "Sign-in didn't complete. Please try again.";
   }
 }
 
 /**
- * "Continue with GitHub". Starts the Better Auth GitHub OAuth flow; on success
- * the user lands on the dashboard. When GitHub OAuth isn't configured the call
- * fails and we show a short hint.
+ * "Continue with GitHub": straight to GitHub through WorkOS, then back to
+ * /api/auth/callback. Failures come back to /signin with `?error=`.
  */
 export function GithubAuthButton({
   label,
@@ -128,37 +127,30 @@ export function GithubAuthButton({
   redirectTo?: string | null;
 }) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Coming back with the browser's Back button restores the page as it was.
+  useEffect(() => {
+    const reset = () => setLoading(false);
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+  const href = redirectTo
+    ? `/api/auth/signin?${new URLSearchParams({ redirect: redirectTo })}`
+    : "/api/auth/signin";
 
   return (
     <div className="space-y-5">
-      <button
-        type="button"
-        disabled={loading}
-        onClick={async () => {
-          setLoading(true);
-          setError(null);
-          try {
-            await signIn.social({
-              provider: "github",
-              callbackURL: redirectTo ?? "/dashboard",
-              // Failures come back to the sign-in page (with ?error=) instead
-              // of the landing page, keeping the destination.
-              errorCallbackURL: redirectTo
-                ? `/signin?redirect=${encodeURIComponent(redirectTo)}`
-                : "/signin",
-            });
-          } catch {
-            setLoading(false);
-            setError("GitHub sign-in is not available. Try email instead.");
-          }
-        }}
-        className="flex h-11 w-full items-center justify-center gap-2.5 rounded-[6px] bg-ink text-[15px] font-medium text-paper transition-colors hover:bg-ink-2 disabled:opacity-60"
+      <a
+        href={href}
+        aria-disabled={loading}
+        onClick={() => setLoading(true)}
+        className={cn(
+          "flex h-11 w-full items-center justify-center gap-2.5 rounded-[6px] bg-ink text-[15px] font-medium text-paper transition-[background-color,transform] duration-150 ease-out hover:bg-ink-2 active:scale-[0.97] motion-reduce:active:scale-100",
+          loading && "pointer-events-none opacity-60",
+        )}
       >
         <Github size={17} />
         {loading ? "Redirecting…" : label}
-      </button>
-      {error && <Notice tone="danger">{error}</Notice>}
+      </a>
 
       <div className="flex items-center gap-3">
         <span className="h-px flex-1 bg-border" />
@@ -196,5 +188,95 @@ export function PasswordField({
         {show ? "Hide" : "Show"}
       </button>
     </div>
+  );
+}
+
+/** Where a server function's thrown validation message goes. */
+export function errorText(err: unknown): string {
+  return err instanceof Error && err.message
+    ? err.message
+    : "Something went wrong. Please try again.";
+}
+
+/**
+ * The 6-digit code WorkOS emails when an address isn't verified yet. The
+ * pending sign-in waits in an httpOnly cookie; on success we go to `redirect`.
+ */
+export function VerifyEmailForm({ onBack }: { onBack: () => void }) {
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resent, setResent] = useState(false);
+
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError(null);
+        try {
+          const r = await verifyEmailCode({ data: { code } });
+          if (r.ok) {
+            window.location.href = r.redirect;
+            return;
+          }
+          setError("error" in r ? r.error : null);
+        } catch (err) {
+          setError(errorText(err));
+        }
+        setLoading(false);
+      }}
+    >
+      {error && <Notice tone="danger">{error}</Notice>}
+      {resent && !error && <Notice tone="success">We sent a new code.</Notice>}
+
+      <Field label="Verification code" htmlFor="code">
+        <Input
+          id="code"
+          required
+          autoFocus
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="[0-9 ]{6,7}"
+          maxLength={7}
+          placeholder="123456"
+          className="h-11 font-mono text-[17px] tracking-[0.3em]"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, ""))}
+        />
+      </Field>
+
+      <Button type="submit" size="lg" className="w-full" disabled={loading}>
+        {loading ? "Verifying…" : "Verify and continue"}
+      </Button>
+
+      <div className="flex items-center justify-between text-[13.5px] text-stone">
+        <button
+          type="button"
+          onClick={onBack}
+          className="transition-colors hover:text-ink"
+        >
+          Use a different email
+        </button>
+        <button
+          type="button"
+          className="font-medium text-ink underline-offset-4 hover:underline"
+          onClick={async () => {
+            setError(null);
+            setResent(false);
+            try {
+              const r = await resendEmailCode();
+              if (r.ok) setResent(true);
+              else setError(r.error ?? null);
+            } catch (err) {
+              setError(errorText(err));
+            }
+          }}
+        >
+          Resend code
+        </button>
+      </div>
+    </form>
   );
 }

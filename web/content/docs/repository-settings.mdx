@@ -3,55 +3,93 @@ title: Repository settings
 description: Every per-repository review setting, what it does, and its default.
 ---
 
-Each connected repository has its own review policy. To change it, open **Repositories**, pick the repository, edit the **Review policy** panel and click **Save policy**. Changes apply from the next review. A review already in progress keeps the settings it started with.
+Each connected repository has its own review policy. To change it, open **Repositories**, pick the repository and switch to the **Review policy** tab. A bar appears at the bottom while you have unsaved changes; click **Save changes**. Changes apply from the next review. A review already in progress keeps the settings it started with.
 
 ## Settings
 
 | Setting | Default | What it does |
 |---------|---------|--------------|
-| **Review pull requests** | On | Reviews a pull request when it is opened, pushed to, reopened or marked ready for review. When off, the repository is reviewed only when you start a review by hand. |
+| **Review pull requests** | Every push | When pull requests are reviewed without being asked: **Every push**, **When opened** or **Only on request**. |
 | **Skip drafts** | On | Ignores draft pull requests until they are marked ready for review. |
+| **Target branches** | All | Only pull requests into these base branches are reviewed automatically. |
 | **Scanners** | Trivy, Opengrep, Gitleaks | Which scanners run. See [Scanners](/docs/scanners). |
-| **AI reviewer** | None | **None** runs scanners only. **Claude Code** or **Codex** adds the AI review. See [AI review](/docs/ai-review). |
-| **Model** | Agent default | Model name passed to the agent with `--model`. Leave it empty to use the agent's default. |
-| **Instructions for the reviewer** | Empty | Extra guidance added to the end of the agent's prompt. |
-| **Fail the check on** | High | The lowest severity that fails the check: **Critical**, **High**, **Medium**, **Low** or **Never**. |
+| **AI reviewer** | None | **None** runs scanners only. **Claude Code**, **Codex** or **Cursor** adds the AI review. See [AI review](/docs/ai-review). |
+| **Model** | Default | The agent's default, a model alias, or a custom model id. |
+| **Focus areas** | None | Extra checklists added to the reviewer's prompt. |
+| **Instructions** | Empty | Extra guidance added to the end of the agent's prompt. |
+| **Fail the check on** | High or above | The lowest severity that fails the check. |
+| **Ignored paths** | Empty | Globs for files whose findings are dropped. |
 
-**Model** and **Instructions for the reviewer** appear only when an AI reviewer is selected.
+**Model**, **Focus areas** and **Instructions** appear only when an AI reviewer is selected.
 
 You must keep at least one scanner or an AI reviewer on. Saving with neither fails with "Enable at least one scanner or an AI agent".
 
 ### Review pull requests
 
-With this on, the `opened`, `synchronize`, `reopened` and `ready_for_review` pull request events start a review. With it off, pull request events are ignored, and the repository list shows **Manual only**. You can still review by clicking **Re-run** on the check in GitHub, **Re-run** in the dashboard, or **Review a branch**.
+| Option | Pull request events that start a review |
+|--------|------------------------------------------|
+| **Every push** | `opened`, `synchronize`, `reopened`, `ready_for_review` |
+| **When opened** | `opened`, `reopened`, `ready_for_review`. New commits are not reviewed until someone asks. |
+| **Only on request** | None. Reviews run only from a [comment command](#pull-request-commands), **Re-run** or **Review a branch**. |
 
 ### Skip drafts
 
-With this on, opening or pushing to a draft pull request does nothing. Marking it ready for review starts a review. Turn it off to review drafts on every push.
+With this on, opening or pushing to a draft pull request does nothing. Marking it ready for review starts a review. Turn it off to review drafts too.
+
+### Target branches
+
+A comma-separated list of base branch names, such as `main, release`. Pull requests into other branches are not reviewed automatically, but a comment command still reviews them. Leave it empty to review pull requests into any branch.
 
 ### AI reviewer
 
-The AI reviewer uses the credential of the person who connected the repository. If they have not saved a credential for the selected agent, the settings panel shows a warning, and reviews run the scanners only until a credential is added. See [Agent credentials](/docs/agent-credentials).
+The AI reviewer uses the credential of the person who connected the repository. If they have not saved a credential for the selected agent, the settings show a warning, and reviews run the scanners only until a credential is added. See [Agent credentials](/docs/agent-credentials).
 
 ### Model
 
-The value is passed to the agent CLI as `--model` exactly as typed. It may contain only letters, digits and the characters `.`, `:`, `/`, `-` and `_`, up to 100 characters. OpenVScan does not check that the model exists. If the agent rejects it, the AI review fails with the agent's error and the scanner results are still published.
+Pick **Default** to let the agent CLI choose. For Claude Code you can also pick **Sonnet**, **Opus** or **Haiku**; these aliases always point at the newest model of that tier. **Custom model id** takes any value the CLI accepts with `--model`: letters, digits and `.`, `:`, `/`, `-`, `_`, up to 100 characters. OpenVScan does not check that the model exists. If the agent rejects it, the AI review fails with the agent's error and the scanner results are still published.
 
-### Instructions for the reviewer
+### Focus areas
 
-Up to 4,000 characters of guidance for the agent, added to the prompt under "Additional instructions from the repository owner". Unlike the pull request's content, these instructions are treated as trusted, because only you can set them. Use them to describe your codebase's conventions and what matters most. For example:
+Each focus area adds a short checklist to the prompt: **Web app**, **API and backend**, **CI and infrastructure**, **LLM and agents** and **Secrets and crypto**. Pick the ones that describe the codebase. With none selected the agent does a general review.
+
+### Instructions
+
+Up to 4,000 characters of guidance for the agent, added to the prompt as the repository owner's instructions. Unlike the pull request's content, these instructions are treated as trusted, because only you can set them. Use them to describe your codebase's conventions and what matters most. For example:
 
 ```text
 All SQL goes through db/query.ts; treat raw string concatenation there as critical.
+```
+
+### Ignored paths
+
+One glob per line. `*` matches within a path segment, `**` across segments and `?` one character. A pattern without a slash matches the file name anywhere, like `.gitignore`; a pattern ending in `/` covers everything below that directory. Findings from scanners and the agent in matching files are dropped, and the agent is told to skip them. For example:
+
+```text
+vendor/**
+**/fixtures/**
+*.min.js
 ```
 
 ### Fail the check on
 
 The check fails when a finding at or above this severity is in the diff and was not dismissed by the agent as a false positive. **Never** makes every review neutral and advisory. See [Results on GitHub](/docs/results-on-github#pass-fail-or-neutral) for the full rule.
 
+## Pull request commands
+
+People with write access to the repository (owner, member or collaborator) can comment on a pull request to drive OpenVScan. Mention the App by its slug:
+
+| Command | What it does |
+|---------|--------------|
+| `@<app> review` | Reviews the pull request's latest commit now, whatever the trigger setting. |
+| `@<app> pause` | Stops automatic reviews on this pull request. |
+| `@<app> resume` | Turns automatic reviews back on for this pull request. |
+| `@<app> help` | Replies with the list of commands. |
+
+OpenVScan reacts with 👀 when it accepts a command. Comments from anyone else, and from bots, are ignored. The **Review policy** tab lists the commands with your App's slug. Commands need the App subscribed to the **Issue comment** event; see [GitHub App](/docs/github-app).
+
 ## Review a branch
 
-The **Review a branch** panel on the repository page starts a review on demand. Enter a branch name, or leave it empty to use the default branch, and click **Run**.
+The **Review a branch** panel on the repository's **Overview** tab starts a review on demand. Enter a branch name, or leave it empty to use the default branch, and click **Run**.
 
 A branch review differs from a pull request review:
 
@@ -61,7 +99,7 @@ A branch review differs from a pull request review:
 
 ## Disconnect a repository
 
-**Disconnect**, at the bottom of the **Review policy** panel, cancels any review in progress and removes the repository from OpenVScan, along with its review history in the dashboard. Pull requests on it are no longer reviewed.
+**Disconnect**, under **Danger zone** on the **Review policy** tab, cancels any review in progress and removes the repository from OpenVScan, along with its review history in the dashboard. Pull requests on it are no longer reviewed.
 
 Disconnecting does not change the GitHub App's access. To remove access, use **Manage on GitHub** on the **Repositories** page. When you remove a repository from the App installation on GitHub, or uninstall the App, OpenVScan removes the affected repositories automatically.
 

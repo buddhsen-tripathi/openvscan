@@ -10,6 +10,7 @@ You can run the whole stack on your machine: the web Worker under Vite, the engi
 - Node.js 22.12 or later and a current pnpm.
 - Docker, running. `wrangler dev` builds the sandbox image from `engine/container/Dockerfile` on first start.
 - `openssl` to generate keys.
+- A WorkOS account. Use its staging environment for development, so local sign-ins stay apart from production users.
 - For real pull request reviews: a GitHub App for development, and a tunnel such as `cloudflared` so GitHub can reach your machine. You do not need either to try the scanners and agents through the `/__dev` routes.
 
 ## Install and configure
@@ -23,12 +24,15 @@ cp engine/.dev.vars.example engine/.dev.vars
 Both `.dev.vars` files are gitignored. Fill them in:
 
 - `CREDENTIALS_KEY`: generate one value with `openssl rand -base64 32` and put the **same** value in both files.
-- `BETTER_AUTH_SECRET` in `web/.dev.vars`: any random string.
-- `BETTER_AUTH_URL` and `VITE_APP_URL` in `web/.dev.vars`: keep `http://localhost:3000`.
+- `WORKOS_CLIENT_ID` and `WORKOS_API_KEY` in `web/.dev.vars`: the client ID and API key of your WorkOS staging environment. Without them, the dashboard cannot sign you in.
+- `WORKOS_AUTHKIT_DOMAIN` in `web/.dev.vars`: the staging environment's AuthKit domain, only if you want to try the [MCP server](/docs/mcp).
+- `VITE_APP_URL` in `web/.dev.vars`: keep `http://localhost:3000`.
 - `APP_URL` in `engine/.dev.vars`: keep `http://localhost:3000`.
 - The `GITHUB_*` values: from your development App. Leave them empty if you only want the dashboard and the `/__dev` routes.
 
 Values in `.dev.vars` override the `vars` in `wrangler.jsonc` during local development.
+
+In the WorkOS staging environment, add `http://localhost:3000/api/auth/callback` as a redirect URI and `http://localhost:3000/` as the default Sign-out URI. See [Configuration](/docs/configuration#sign-in-with-workos) for the other AuthKit settings.
 
 ## Create the local database
 
@@ -54,7 +58,7 @@ Start the web Worker in another:
 pnpm dev:web
 ```
 
-It listens on `http://localhost:3000`. The port is pinned in `web/vite.config.ts` so the browser origin matches `BETTER_AUTH_URL`; on any other port, Better Auth rejects sign-in with `INVALID_ORIGIN`. The web Worker's `ENGINE` service binding connects to the locally running engine.
+It listens on `http://localhost:3000`. The port is pinned in `web/vite.config.ts` so the sign-in redirect URI, `http://localhost:3000/api/auth/callback`, matches the one registered in WorkOS. In development the redirect URIs use the browser's origin, so open the app at exactly that address. The web Worker's `ENGINE` service binding connects to the locally running engine.
 
 The dashboard works without the engine, but starting a review needs it.
 
@@ -64,7 +68,7 @@ Register a separate GitHub App for development, following [Register a GitHub App
 
 | Setting | Value |
 |---------|-------|
-| Callback URL | `http://localhost:3000/api/auth/callback/github` |
+| Callback URL | `http://localhost:3000/api/github/link/callback` |
 | Setup URL | `http://localhost:3000/api/github/setup` |
 | Webhook URL | `https://<your-tunnel-host>/api/github/webhook` |
 
@@ -110,11 +114,11 @@ curl -X POST localhost:8787/__dev/agent \
   -d '{"kind":"anthropic_api_key","secret":"sk-ant-..."}'
 ```
 
-This starts Claude Code or Codex in the sandbox with a one-line prompt and the real credential held by the egress proxy, then waits for it to exit. The response includes the task state, the `review.json` the agent wrote, a parsed failure reason if it failed, and the tail of its output.
+This starts Claude Code, Codex or Cursor in the sandbox with a one-line prompt and the real credential held by the egress proxy, then waits for it to exit. The response includes the task state, the `review.json` the agent wrote, a parsed failure reason if it failed, and the tail of its output.
 
 | Field | Values |
 |-------|--------|
-| `kind` | `claude_oauth_token` or `anthropic_api_key` (Claude Code), `openai_api_key` (Codex). Defaults to `anthropic_api_key`. |
+| `kind` | `claude_oauth_token` or `anthropic_api_key` (Claude Code), `openai_api_key`, `codex_access_token` or `codex_chatgpt_login` (Codex; `secret` is the whole `auth.json`, and it isn't refreshed), or `cursor_api_key` (Cursor; pass `accessToken` instead of `secret` to skip the key exchange). Defaults to `anthropic_api_key`. |
 | `secret` | The credential to test. |
 | `model` | Optional model name passed to the agent. |
 

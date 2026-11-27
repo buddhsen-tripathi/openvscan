@@ -71,7 +71,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-[10px] border border-border bg-card shadow-card",
+        "overflow-hidden rounded-[10px] border border-transparent bg-card shadow-edge",
         className,
       )}
     >
@@ -117,6 +117,47 @@ export function ListHead({
   );
 }
 
+/** Underlined tabs. Render the active panel yourself. */
+export function TabBar<T extends string>({
+  label,
+  tabs,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  tabs: { key: T; label: ReactNode }[];
+  value: T;
+  onChange: (key: T) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={label}
+      className={cn("flex gap-5", className)}
+    >
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={value === t.key}
+          onClick={() => onChange(t.key)}
+          className={cn(
+            "-mb-px inline-flex items-center gap-1.5 border-b-2 pb-3 text-[13.5px] transition-colors",
+            value === t.key
+              ? "border-foreground font-medium text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ---------------------------------- Stats --------------------------------- */
 
 export function StatStrip({
@@ -130,7 +171,7 @@ export function StatStrip({
   }[];
 }) {
   return (
-    <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-border bg-card shadow-card lg:grid-cols-4">
+    <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-transparent bg-card shadow-edge lg:grid-cols-4">
       {items.map((s, i) => (
         <div
           key={s.label}
@@ -178,7 +219,7 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">
-      <div className="grid size-11 place-items-center rounded-[10px] border border-border bg-background text-muted-foreground shadow-card">
+      <div className="grid size-11 place-items-center rounded-[10px] border border-transparent bg-background text-muted-foreground shadow-edge">
         <Icon size={19} />
       </div>
       <h3 className="mt-4 font-display text-[21px] tracking-[-0.01em] text-foreground">
@@ -258,13 +299,13 @@ export function Switch({
       aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-accent-brand/25",
+        "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-accent-brand/25",
         checked ? "bg-accent-brand" : "bg-input",
       )}
     >
       <span
         className={cn(
-          "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
+          "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform duration-150 ease-out",
           checked ? "translate-x-[18px]" : "translate-x-0.5",
         )}
       />
@@ -348,7 +389,10 @@ export function Avatar({
         width={size}
         height={size}
         style={{ width: size, height: size }}
-        className={cn("shrink-0 rounded-full object-cover", className)}
+        className={cn(
+          "shrink-0 rounded-full object-cover outline -outline-offset-1 outline-black/10 dark:outline-white/10",
+          className,
+        )}
       />
     );
   }
@@ -377,7 +421,10 @@ export function GithubAvatar({
     <img
       src={`https://github.com/${encodeURIComponent(login)}.png?size=40`}
       alt=""
-      className={cn("size-6 shrink-0 rounded-[5px] bg-muted", className)}
+      className={cn(
+        "size-6 shrink-0 rounded-[5px] bg-muted outline -outline-offset-1 outline-black/10 dark:outline-white/10",
+        className,
+      )}
     />
   );
 }

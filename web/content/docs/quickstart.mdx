@@ -6,11 +6,13 @@ description: Install the GitHub App, connect a repository and get your first pul
 This guide takes you from a new account to a reviewed pull request. It uses the hosted version at openvscan.com. On a self-hosted deployment the steps are the same once an operator has set it up (see [Self-hosting](/docs/self-hosting)).
 
 <Steps>
-<Step title="Sign in with GitHub">
+<Step title="Sign up">
 
-Go to openvscan.com and choose **Continue with GitHub**, or **Sign up with GitHub** if you are new.
+Go to openvscan.com and choose **Sign in**. The sign-in page lets you create an account with GitHub or with your email.
 
-Use GitHub rather than email and password. When you install the GitHub App, OpenVScan checks with GitHub that your account can manage that installation, and it needs your GitHub sign-in to do that. Without it, the install step fails with "Sign in with GitHub (or link your GitHub account) before connecting an installation."
+Signing up with GitHub is the quickest route: it also links your GitHub account. When you install the GitHub App, OpenVScan checks with GitHub that your account can manage that installation, and it needs a linked GitHub account to do that.
+
+If you signed up with email, open **Settings**, go to **GitHub account** and choose **Link GitHub** before you install the App.
 
 </Step>
 <Step title="Install the GitHub App">
@@ -51,11 +53,12 @@ Skip this step if you only want scanner results. Reviews work without an agent.
 To add the AI review, open **Settings** and go to the **AI agents** section:
 
 - For **Claude Code**, choose **Claude subscription token** (run `claude setup-token` and paste the token) or **Anthropic API key**.
-- For **Codex**, use an **OpenAI API key**.
+- For **Codex**, choose **ChatGPT login** (paste the `auth.json` from `codex login --device-auth`; see [Agent credentials](/docs/agent-credentials)), **Codex access token** or **OpenAI API key**.
+- For **Cursor**, create a user API key under Cursor Dashboard → API Keys.
 
 Paste it into **Token** and click **Save credential**.
 
-Then turn the agent on for the repository. Open the repository from **Repositories**, set **AI reviewer** to **Claude Code** or **Codex** in the **Review policy** panel, and click **Save policy**. Saving a credential alone does not enable the AI review.
+Then turn the agent on for the repository. Open the repository from **Repositories**, set **AI reviewer** to **Claude Code**, **Codex** or **Cursor** in the **Review policy** panel, and click **Save policy**. Saving a credential alone does not enable the AI review.
 
 See [Agent credentials](/docs/agent-credentials) for how the credential is stored and used.
 

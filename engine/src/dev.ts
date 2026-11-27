@@ -1,6 +1,10 @@
-import { type AgentProvider, type CredentialKind, SCANNERS } from "@openvscan/core";
-import { agentFailure, agentInvocation, PROMPT_PATH, REVIEW_PATH, TASK_DIR, WORK_DIR } from "./agent";
+import { type AgentProvider, CREDENTIAL_INFO, type CredentialKind, parseCodexAuthFile, SCANNERS } from "@openvscan/core";
+import { agentFailure, agentInvocation, CODEX_HOME, PROMPT_PATH, REVIEW_PATH, TASK_DIR, WORK_DIR } from "./agent";
+import { sandboxAuthFile } from "./codex";
+import { cursorAccessToken, sandboxCursorToken } from "./cursor";
+import { daytonaSettings, DaytonaBox } from "./daytona";
 import { sandboxFor } from "./sandbox";
+import { extractTarball } from "./workflow";
 import { OUT_DIR, REPO_DIR, SCANNER_SPECS } from "./scanners";
 
 /**
@@ -9,6 +13,7 @@ import { OUT_DIR, REPO_DIR, SCANNER_SPECS } from "./scanners";
  *
  *   curl -X POST localhost:8787/__dev/scan -d '{"repo":"octocat/Hello-World"}'
  *   curl -X POST localhost:8787/__dev/agent -d '{"kind":"anthropic_api_key","secret":"sk-ant-…"}'
+ *   curl -X POST localhost:8787/__dev/daytona -d '{"repo":"octocat/Hello-World"}'   # needs DAYTONA_API_KEY
  */
 export async function devRoute(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -57,11 +62,24 @@ export async function devRoute(request: Request, env: Env): Promise<Response> {
 
   if (url.pathname === "/__dev/agent") {
     const kind = (body.kind ?? "anthropic_api_key") as CredentialKind;
-    const provider: AgentProvider = kind === "openai_api_key" ? "codex" : "claude";
+    const provider: AgentProvider = CREDENTIAL_INFO[kind].provider;
     await sb.start();
     await sb.writeText(PROMPT_PATH, `Write the JSON {"summary":"smoke test","risk":"none"} to ${REVIEW_PATH}.`);
     const inv = agentInvocation(provider, kind, body.model ?? null);
-    await sb.setEgress({ phase: "agent", kind, secret: body.secret ?? "invalid" });
+    if (kind === "codex_chatgpt_login") {
+      // `secret` is a pasted auth.json; no refresh here, so use a fresh login.
+      const login = parseCodexAuthFile(body.secret ?? "");
+      await sb.writeText(`${CODEX_HOME}/auth.json`, sandboxAuthFile(login));
+      await sb.setEgress({ phase: "agent", kind, secret: login.accessToken, accountId: login.accountId });
+    } else if (kind === "cursor_api_key") {
+      // `secret` is the API key, or `accessToken` skips the exchange (to test egress with a fake token).
+      const token = body.accessToken ?? (await cursorAccessToken(body.secret ?? ""));
+      const placeholder = sandboxCursorToken(token);
+      inv.env.CURSOR_AUTH_TOKEN = placeholder;
+      await sb.setEgress({ phase: "agent", kind, secret: token, placeholder });
+    } else {
+      await sb.setEgress({ phase: "agent", kind, secret: body.secret ?? "invalid" });
+    }
     await sb.startTask(TASK_DIR, inv.argv, { cwd: WORK_DIR, env: inv.env });
     let state = await sb.taskState(TASK_DIR);
     for (let i = 0; i < 90 && state.state === "running"; i++) {
@@ -77,6 +95,38 @@ export async function devRoute(request: Request, env: Env): Promise<Response> {
       failure: state.state === "exited" ? agentFailure(provider, state.exitCode, stdout, stderr) : null,
       stdoutTail: stdout.slice(-1500),
     });
+  }
+
+  if (url.pathname === "/__dev/daytona") {
+    // Checkout from a public tarball and run the scanners on Daytona.
+    const repo = body.repo ?? "OWASP/NodeGoat";
+    const box = new DaytonaBox(daytonaSettings(env), "dev-smoke");
+    const t0 = Date.now();
+    try {
+      const { fresh } = await box.start();
+      const started = Date.now() - t0;
+      await box.setEgress({ phase: "checkout", repo, githubToken: "" });
+      await extractTarball(box, `https://codeload.github.com/${repo}/tar.gz/HEAD`, "HEAD");
+      await box.lockEgress();
+      const results: Record<string, unknown> = {};
+      for (const name of SCANNERS) {
+        const spec = SCANNER_SPECS[name];
+        const s = Date.now();
+        await box.setEgress(name === "trivy" ? { phase: "scan" } : { phase: "locked" });
+        const r = await box.exec(spec.argv, { env: spec.env, timeoutSec: spec.timeoutSec });
+        await box.lockEgress();
+        const raw = await box.readText(spec.outputPath);
+        results[name] = {
+          exitCode: r.exitCode,
+          stderr: r.stderr.slice(-300),
+          findings: raw ? spec.parse(raw).length : null,
+          ms: Date.now() - s,
+        };
+      }
+      return Response.json({ repo, fresh, startMs: started, results, totalMs: Date.now() - t0 });
+    } finally {
+      if (body.keep !== "true") await box.destroy().catch(() => {});
+    }
   }
 
   if (url.pathname === "/__dev/destroy") {

@@ -1,15 +1,15 @@
 ---
 title: AI review
-description: How Claude Code or Codex triages scanner findings and reviews the diff, and what it can and cannot do.
+description: How Claude Code, Codex or Cursor triages scanner findings and reviews the diff, and what it can and cannot do.
 ---
 
-The AI review is an optional step that runs after the scanners. OpenVScan starts Claude Code or Codex headless inside the same sandbox, gives it the checked-out code, the pull request diff and the scanner findings, and asks for a structured JSON review. The agent runs on the credential of the person who connected the repository.
+The AI review is an optional step that runs after the scanners. OpenVScan starts Claude Code, Codex or Cursor headless inside the same sandbox, gives it the checked-out code, the pull request diff and the scanner findings, and asks for a structured JSON review. The agent runs on the credential of the person who connected the repository.
 
 ## Turning it on
 
 The AI review runs when both of these are true:
 
-- The repository's **AI reviewer** is set to **Claude Code** or **Codex**. See [Repository settings](/docs/repository-settings).
+- The repository's **AI reviewer** is set to **Claude Code**, **Codex** or **Cursor**. See [Repository settings](/docs/repository-settings).
 - The person who connected the repository has saved a matching credential under **Settings** in the **AI agents** section. See [Agent credentials](/docs/agent-credentials).
 
 If the credential is missing, the review runs the scanners only. The summary comment then says "AI review did not complete" with a pointer to **Settings → AI agents**.
@@ -123,10 +123,22 @@ codex exec --json --ephemeral --skip-git-repo-check \
   --config analytics.enabled=false \
   --config check_for_update_on_startup=false \
   --config features.plugins=false \
+  --config 'cli_auth_credentials_store="file"' \
   -- "Follow the instructions in /workspace/.openvscan/PROMPT.md exactly. Write your result to /workspace/.openvscan/review.json."
 ```
 
-Its environment sets placeholder `OPENAI_API_KEY` and `CODEX_API_KEY` values.
+Its environment sets `CODEX_HOME=/workspace/.codex`, plus placeholder `OPENAI_API_KEY` and `CODEX_API_KEY` values (API key), a placeholder `CODEX_ACCESS_TOKEN` (access token), or a placeholder `auth.json` in `CODEX_HOME` (ChatGPT login).
+
+Cursor runs as:
+
+```bash
+cursor-agent --print --output-format stream-json --force \
+  --sandbox disabled --trust --workspace /workspace/.openvscan \
+  --model <model> \
+  "Follow the instructions in /workspace/.openvscan/PROMPT.md exactly. Write your result to /workspace/.openvscan/review.json."
+```
+
+Its environment sets a placeholder `CURSOR_AUTH_TOKEN`. The engine trades your API key for a real access token before the run.
 
 `--model` is passed only when you set **Model** on the repository. Both agents skip their own permission prompts because the sandbox is the permission boundary: it has no general network access and holds no secrets. The real credential is added by the egress proxy on requests to the model API.
 

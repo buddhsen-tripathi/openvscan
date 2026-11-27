@@ -3,7 +3,7 @@
 # The container has NO direct internet access at run time. Every HTTP(S)
 # request goes through the engine Worker's `Outbound` entrypoint, which only
 # allows what the current pipeline phase needs and injects credentials (the
-# GitHub clone token, the user's Claude/OpenAI credential) at the egress, so
+# GitHub clone token, the user's model credential) at the egress, so
 # no secret ever exists inside this image or its processes.
 #
 # Bump these pins deliberately: CLI flags and output formats change between
@@ -23,6 +23,7 @@ ARG OPENGREP_RULES_REPO=https://github.com/opengrep/opengrep-rules
 ARG OPENGREP_RULES_COMMIT=f1d2b562b414783763fd02a6ed2736eaed622efa
 ARG CLAUDE_CODE_VERSION=2.1.332
 ARG CODEX_VERSION=0.172.0
+ARG CURSOR_AGENT_VERSION=2026.11.22-e9042b2
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates curl git jq ripgrep \
@@ -57,10 +58,19 @@ RUN arch="$(case "$TARGETARCH" in arm64) echo aarch64 ;; *) echo x86 ;; esac)" \
   && find /opt/opengrep-rules -type f \( -name '*.test.yaml' -o -name '*.test.yml' \) -delete \
   && rm -rf /tmp/rules
 
-# --- Coding agents. Both are driven headless by the engine.
+# --- Coding agents, all driven headless by the engine.
 RUN npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
   && npm install --global --ignore-scripts "@openai/codex@${CODEX_VERSION}" \
   && npm cache clean --force
+
+# Cursor ships a self-contained tarball (its own node). The signed SEA builds
+# are only for macOS computer use, so they're dropped.
+RUN arch="$(case "$TARGETARCH" in arm64) echo arm64 ;; *) echo x64 ;; esac)" \
+  && mkdir -p /opt/cursor-agent \
+  && curl -sSfL "https://downloads.cursor.com/lab/${CURSOR_AGENT_VERSION}/linux/${arch}/agent-cli-package.tar.gz" \
+    | tar --strip-components=1 -xz -C /opt/cursor-agent \
+  && rm -f /opt/cursor-agent/*-sea /opt/cursor-agent/*.mp4 \
+  && ln -s /opt/cursor-agent/cursor-agent /usr/local/bin/cursor-agent
 
 # Helper that @cloudflare/sandbox's `Files` API runs inside the container.
 COPY --from=sandbox /usr/local/bin/sandbox-shim /usr/local/bin/sandbox-shim

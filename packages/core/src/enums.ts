@@ -29,7 +29,7 @@ export const RUN_PHASES = [
 export const CONCLUSIONS = ["pass", "fail", "neutral"] as const;
 export type Conclusion = (typeof CONCLUSIONS)[number];
 
-export const RUN_TRIGGERS = ["pull_request", "manual"] as const;
+export const RUN_TRIGGERS = ["pull_request", "manual", "command"] as const;
 export type RunTrigger = (typeof RUN_TRIGGERS)[number];
 
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"] as const;
@@ -77,24 +77,27 @@ export const AI_VERDICTS = ["confirmed", "false_positive", "needs_review"] as co
 export type AiVerdict = (typeof AI_VERDICTS)[number];
 
 /** Headless coding agents the engine can drive. */
-export const AGENT_PROVIDERS = ["claude", "codex"] as const;
+export const AGENT_PROVIDERS = ["claude", "codex", "cursor"] as const;
 export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
 
 export const AGENT_INFO: Record<
   AgentProvider,
-  { label: string; short: string; cmd: string; blurb: string }
+  { label: string; cmd: string; blurb: string }
 > = {
   claude: {
     label: "Claude Code",
-    short: "CC",
     cmd: "claude -p",
     blurb: "Your Claude Pro or Max subscription, or an Anthropic API key.",
   },
   codex: {
     label: "Codex",
-    short: "CX",
     cmd: "codex exec",
-    blurb: "An OpenAI API key.",
+    blurb: "Your ChatGPT plan, a Business or Enterprise access token, or an OpenAI API key.",
+  },
+  cursor: {
+    label: "Cursor",
+    cmd: "cursor-agent -p",
+    blurb: "Your Cursor plan, through a user API key.",
   },
 };
 
@@ -106,13 +109,23 @@ export const AGENT_INFO: Record<
 export const CREDENTIAL_KINDS = [
   "claude_oauth_token",
   "anthropic_api_key",
+  "codex_chatgpt_login",
+  "codex_access_token",
   "openai_api_key",
+  "cursor_api_key",
 ] as const;
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
 export const CREDENTIAL_INFO: Record<
   CredentialKind,
-  { provider: AgentProvider; label: string; hint: string; prefix?: string }
+  {
+    provider: AgentProvider;
+    label: string;
+    hint: string;
+    prefix?: string;
+    /** Pasted as a file (multi-line JSON), not a single-line token. */
+    file?: boolean;
+  }
 > = {
   claude_oauth_token: {
     provider: "claude",
@@ -129,8 +142,25 @@ export const CREDENTIAL_INFO: Record<
   openai_api_key: {
     provider: "codex",
     label: "OpenAI API key",
-    hint: "An API key from platform.openai.com, used by the Codex CLI.",
+    hint: "An API key from platform.openai.com (usage-based billing).",
     prefix: "sk-",
+  },
+  codex_chatgpt_login: {
+    provider: "codex",
+    label: "ChatGPT login",
+    hint: "Sign in with `codex login --device-auth` in a fresh CODEX_HOME and paste its auth.json (uses your Plus/Pro plan).",
+    file: true,
+  },
+  codex_access_token: {
+    provider: "codex",
+    label: "Codex access token",
+    hint: "A ChatGPT Business or Enterprise access token for Codex automation.",
+    prefix: "at-",
+  },
+  cursor_api_key: {
+    provider: "cursor",
+    label: "Cursor API key",
+    hint: "Create a user API key under Cursor Dashboard → API Keys. Usage counts against your Cursor plan.",
   },
 };
 

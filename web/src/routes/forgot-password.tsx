@@ -1,9 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
-import { AuthShell } from "@/components/auth/AuthShell";
+import { AuthShell, errorText } from "@/components/auth/AuthShell";
 import { Notice } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/Input";
+import { requestPasswordReset } from "@/lib/auth-server";
 import { isSignedIn } from "@/src/lib/session";
 
 export const Route = createFileRoute("/forgot-password")({
@@ -34,38 +35,27 @@ function ForgotPasswordPage() {
     >
       <form
         className="space-y-4"
-        autoComplete="off"
         onSubmit={async (e) => {
           e.preventDefault();
           setLoading(true);
           setError(null);
           setSuccess(false);
           try {
-            // Relative URL resolves against the current origin — works in dev
-            // (:3000) and prod (openvscan.com) without a hardcoded host.
-            const response = await fetch("/api/auth/request-password-reset", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email, redirectTo: "/reset-password" }),
-            });
-            if (!response.ok) {
-              const body = (await response.json().catch(() => undefined)) as
-                | { message?: string }
-                | undefined;
-              setError(body?.message || "An error occurred");
-              return;
-            }
-            setSuccess(true);
-          } catch {
-            setError("An unexpected error occurred.");
-          } finally {
-            setLoading(false);
+            const r = await requestPasswordReset({ data: { email } });
+            if (r.ok) setSuccess(true);
+            else setError(r.error ?? null);
+          } catch (err) {
+            setError(errorText(err));
           }
+          setLoading(false);
         }}
       >
         {error && <Notice tone="danger">{error}</Notice>}
         {success && (
-          <Notice tone="success">Check your email for a reset link.</Notice>
+          <Notice tone="success">
+            If an account uses that email, a reset link is on its way. It
+            expires in 15 minutes.
+          </Notice>
         )}
 
         <Field label="Email" htmlFor="email">
@@ -73,6 +63,7 @@ function ForgotPasswordPage() {
             id="email"
             type="email"
             required
+            autoComplete="email"
             placeholder="you@company.com"
             className="h-10"
             value={email}

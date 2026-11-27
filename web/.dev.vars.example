@@ -1,28 +1,38 @@
 # Web Worker local secrets. Copy to `.dev.vars` and fill in.
 # (.dev.vars is gitignored; this .example file is safe to commit.)
 
-BETTER_AUTH_SECRET="generate-a-random-32-char-secret"
-BETTER_AUTH_URL=http://localhost:3000
 VITE_APP_URL=http://localhost:3000
 
-# 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts the AI agent
-# credentials users save in Settings → AI agents. MUST be the same value in
-# engine/.dev.vars (the engine decrypts them at run time). Rotating it makes
-# saved credentials unreadable — users would have to paste them again.
+# --- WorkOS AuthKit (sign-in) ---
+# Use a WorkOS staging environment. Add http://localhost:3000/api/auth/callback
+# as a redirect URI and http://localhost:3000/ as the default Sign-out URI.
+WORKOS_CLIENT_ID=
+WORKOS_API_KEY=
+# Optional: the AuthKit domain (e.g. your-app.authkit.app). Enables the MCP
+# server at /mcp; leave empty to turn it off.
+WORKOS_AUTHKIT_DOMAIN=
+
+# 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts sign-in
+# sessions, linked GitHub tokens and the AI agent credentials users save in
+# Settings → AI agents. MUST be the same value in engine/.dev.vars (the engine
+# decrypts credentials at run time). Rotating it signs everyone out and makes
+# saved credentials unreadable.
 CREDENTIALS_KEY=
 
 # --- GitHub App (enables repo connect + PR reviews) ---
 # Repository:   Checks (read & write), Pull requests (read & write),
-#               Contents (read), Metadata (read)
+#               Contents (read), Issues (read), Metadata (read)
 # Organization: Members (read): lets org admins connect an org installation
-# Account:      Email addresses (read): for "Continue with GitHub"
-# Events:       Pull request, Check run, Repository
+# Account:      Email addresses (read): for GitHub sign-in through WorkOS
+# Events:       Pull request, Issue comment, Check run, Repository
 # Webhook URL: <origin>/api/github/webhook   Setup URL: <origin>/api/github/setup
+# Callback URL: <origin>/api/github/link/callback (plus WorkOS's GitHub
+#               redirect URI if WorkOS uses this App's client for GitHub sign-in)
 # The private key is the .pem contents; real newlines or escaped "\n" both work.
 GITHUB_APP_ID=
 GITHUB_APP_SLUG=
 GITHUB_APP_PRIVATE_KEY=
 GITHUB_WEBHOOK_SECRET=
-# The GitHub App's own OAuth client id/secret ("Continue with GitHub").
+# The GitHub App's own OAuth client id/secret (links a user's GitHub account).
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=

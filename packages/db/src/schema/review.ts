@@ -7,6 +7,7 @@ import {
   RUN_PHASES,
   RUN_STATUSES,
   RUN_TRIGGERS,
+  type ReviewFocus,
   type Scanner,
   type ScannerStat,
   SEVERITIES,
@@ -39,6 +40,8 @@ export const pullRequest = sqliteTable(
     headRepoFullName: text("head_repo_full_name").notNull(),
     /** Id of the bot's sticky summary comment, updated on each run. */
     summaryCommentId: text("summary_comment_id"),
+    /** Automatic reviews paused by a `pause` comment command. */
+    paused: integer("paused", { mode: "boolean" }).default(false).notNull(),
     createdAt: integer("created_at", { mode: "timestamp" })
       .$defaultFn(() => new Date())
       .notNull(),
@@ -79,6 +82,8 @@ export const run = sqliteTable(
     agentModel: text("agent_model"),
     failOn: text("fail_on", { enum: FAIL_THRESHOLDS }).notNull(),
     instructions: text("instructions"),
+    focus: text("focus", { mode: "json" }).$type<ReviewFocus[]>().default([]).notNull(),
+    ignorePaths: text("ignore_paths", { mode: "json" }).$type<string[]>().default([]).notNull(),
     /** Agent's overall summary + risk rating (markdown). */
     aiSummary: text("ai_summary"),
     aiRisk: text("ai_risk"),

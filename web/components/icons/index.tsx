@@ -86,6 +86,12 @@ const RawPullRequest = drawn(
   </>,
 );
 const RawChevronsUpDown = drawn(<path d="m8 9.5 4-4 4 4M8 14.5l4 4 4-4" />);
+const RawPanelLeft = drawn(
+  <>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+    <path d="M9.5 4.5v15" />
+  </>,
+);
 const RawBan = drawn(
   <>
     <circle cx="12" cy="12" r="9.15" />
@@ -113,6 +119,7 @@ export const ArrowLeft = wrap(P.ArrowLeftIcon, "ArrowLeft");
 export const ChevronRight = wrap(P.ChevronRightIcon, "ChevronRight");
 export const ChevronDown = wrap(P.ChevronDownIcon, "ChevronDown");
 export const ChevronsUpDown = wrap(RawChevronsUpDown, "ChevronsUpDown");
+export const PanelLeft = wrap(RawPanelLeft, "PanelLeft");
 export const ExternalLink = wrap(P.ExternalLinkSquareIcon, "ExternalLink");
 export const LayoutGrid = wrap(P.GridDashboard02Icon, "LayoutGrid");
 export const Sliders = wrap(P.FilterHorizontalIcon, "Sliders");

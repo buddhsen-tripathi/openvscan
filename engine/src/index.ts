@@ -4,7 +4,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { getDb, githubFor, logRun, schema, updateRun } from "./db";
 import { devRoute } from "./dev";
-import { sandboxFor } from "./sandbox";
+import { runBoxes } from "./sandbox";
 
 export { Outbound } from "./outbound";
 export { ScanSandbox } from "./sandbox";
@@ -42,9 +42,7 @@ export class EngineApi extends WorkerEntrypoint<Env> implements EngineRpc {
     await this.env.REVIEW_WORKFLOW.get(runId)
       .then((i) => i.terminate())
       .catch(() => {});
-    await sandboxFor(this.env, runId)
-      .destroy()
-      .catch(() => {});
+    await Promise.all(runBoxes(this.env, runId).all.map((b) => b.destroy().catch(() => {}))).catch(() => {});
     if (run.checkRunId) {
       await completeCheckRun(githubFor(this.env, run.repository.installation.installationId), {
         owner: run.repository.owner,

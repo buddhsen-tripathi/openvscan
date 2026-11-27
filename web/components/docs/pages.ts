@@ -136,6 +136,17 @@ export const DOC_TABS: DocTab[] = [
         ],
       },
       {
+        title: "Integrations",
+        pages: [
+          {
+            slug: "mcp",
+            title: "MCP server",
+            description:
+              "Connect Claude Code, Codex or Cursor to OpenVScan's MCP server to read reviews, start and re-run them, and change repository settings.",
+          },
+        ],
+      },
+      {
         title: "Security",
         pages: [
           {
@@ -177,7 +188,7 @@ export const DOC_TABS: DocTab[] = [
             slug: "github-app",
             title: "Register a GitHub App",
             description:
-              "Create the GitHub App that receives pull request events, posts reviews and signs users in.",
+              "Create the GitHub App that receives pull request events, posts reviews and links users' GitHub accounts.",
           },
           {
             slug: "deploy",
@@ -190,6 +201,12 @@ export const DOC_TABS: DocTab[] = [
       {
         title: "Reference",
         pages: [
+          {
+            slug: "daytona",
+            title: "Run sandboxes on Daytona",
+            description:
+              "Run review sandboxes on your own Daytona account instead of Cloudflare Containers, in hybrid or full mode.",
+          },
           {
             slug: "configuration",
             title: "Configuration",

@@ -3,6 +3,10 @@ import {
   type AgentProvider,
   FAIL_THRESHOLDS,
   type FailThreshold,
+  REVIEW_FOCUS,
+  REVIEW_TRIGGERS,
+  type ReviewFocus,
+  type ReviewTrigger,
   SCANNERS,
   type Scanner,
 } from "@openvscan/core";
@@ -24,6 +28,7 @@ import {
 } from "@/lib/github";
 import { createAndStartRun, releaseRepositories } from "@/lib/runs";
 import { requireUserId } from "@/lib/user";
+import { getEnv } from "@/src/lib/env";
 
 /* ------------------------- Connection / install ------------------------- */
 
@@ -197,18 +202,38 @@ export const getRepository = createServerFn({ method: "GET" })
       },
     });
     if (!repo) throw new Error("Repository not found");
-    return repo;
+    // The App's handle on GitHub, for the `@<slug> review` command reference.
+    return { ...repo, appSlug: getEnv("GITHUB_APP_SLUG") ?? null };
   });
 
 export interface RepositorySettingsInput {
   id: string;
-  autoReview: boolean;
+  reviewTrigger: ReviewTrigger;
   skipDrafts: boolean;
+  baseBranches: string[];
+  ignorePaths: string[];
   scanners: Scanner[];
   agent: AgentProvider | null;
   agentModel: string | null;
+  focus: ReviewFocus[];
   instructions: string | null;
   failOn: FailThreshold;
+}
+
+/** Trimmed, de-duplicated, non-empty strings that each match `pattern`. */
+function cleanList(
+  value: unknown,
+  pattern: RegExp,
+  label: string,
+  max = 50,
+): string[] {
+  const list = Array.isArray(value)
+    ? [...new Set(value.map((v) => String(v).trim()).filter(Boolean))]
+    : [];
+  if (list.length > max) throw new Error(`At most ${max} ${label}`);
+  const bad = list.find((v) => !pattern.test(v));
+  if (bad) throw new Error(`Invalid ${label.replace(/s$/, "")}: ${bad}`);
+  return list;
 }
 
 export const updateRepositorySettings = createServerFn({ method: "POST" })
@@ -231,6 +256,14 @@ export const updateRepositorySettings = createServerFn({ method: "POST" })
     if (!(FAIL_THRESHOLDS as readonly string[]).includes(data.failOn)) {
       throw new Error("Invalid fail threshold");
     }
+    if (!(REVIEW_TRIGGERS as readonly string[]).includes(data.reviewTrigger)) {
+      throw new Error("Invalid review trigger");
+    }
+    const focus = Array.isArray(data.focus)
+      ? [...new Set(data.focus)].filter((f): f is ReviewFocus =>
+          (REVIEW_FOCUS as readonly string[]).includes(f),
+        )
+      : [];
     const agentModel = data.agentModel?.trim() || null;
     if (agentModel && !/^[\w.:/-]{1,100}$/.test(agentModel)) {
       throw new Error(
@@ -243,11 +276,18 @@ export const updateRepositorySettings = createServerFn({ method: "POST" })
     }
     return {
       id: data.id,
-      autoReview: Boolean(data.autoReview),
+      reviewTrigger: data.reviewTrigger,
       skipDrafts: Boolean(data.skipDrafts),
+      baseBranches: cleanList(
+        data.baseBranches,
+        /^[\w./-]{1,250}$/,
+        "branches",
+      ),
+      ignorePaths: cleanList(data.ignorePaths, /^[^\0\n]{1,200}$/, "paths"),
       scanners,
       agent: data.agent,
       agentModel,
+      focus,
       instructions,
       failOn: data.failOn,
     };

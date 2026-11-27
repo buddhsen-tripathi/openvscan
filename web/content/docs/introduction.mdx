@@ -3,7 +3,7 @@ title: Introduction
 description: OpenVScan reviews GitHub pull requests for security issues using open-source scanners and your own coding agent.
 ---
 
-OpenVScan is an open-source security reviewer for GitHub pull requests. When a pull request is opened or updated, it checks out the head commit in an isolated container and runs Trivy, Opengrep and Gitleaks. If you turn on the AI reviewer, Claude Code or Codex then triages those findings and reviews the diff, using your own Claude subscription token, Anthropic API key or OpenAI API key.
+OpenVScan is an open-source security reviewer for GitHub pull requests. When a pull request is opened or updated, it checks out the head commit in an isolated container and runs Trivy, Opengrep and Gitleaks. If you turn on the AI reviewer, Claude Code, Codex or Cursor then triages those findings and reviews the diff, using your own Claude, ChatGPT or Cursor subscription, or an Anthropic or OpenAI API key.
 
 It runs entirely on Cloudflare (Workers, Workflows, Containers, D1 and R2) and is licensed under AGPL-3.0.
 
@@ -36,7 +36,7 @@ OpenVScan reviews GitHub pull requests through a GitHub App. You can also review
 
 ## Hosted or self-hosted
 
-The hosted version runs at openvscan.com. Sign in, install the GitHub App on the repositories you choose, and connect them in the dashboard.
+The hosted version runs at openvscan.com. Sign up, link your GitHub account, install the GitHub App on the repositories you choose, and connect them in the dashboard.
 
 You can also run OpenVScan on your own Cloudflare account. It needs the Workers Paid plan for Containers. See [Self-hosting](/docs/self-hosting).
 
@@ -47,4 +47,5 @@ In both cases the AI step runs on your credential, so model usage is billed by A
 - [Quickstart](/docs/quickstart): get your first pull request reviewed.
 - [How a review works](/docs/how-a-review-works): the pipeline from webhook to published results.
 - [Security model](/docs/security-model): how the sandbox limits what a compromised agent can do.
-- [Agent credentials](/docs/agent-credentials): connect Claude Code or Codex.
+- [Agent credentials](/docs/agent-credentials): connect Claude Code, Codex or Cursor.
+- [MCP server](/docs/mcp): read and run reviews from your coding agent.

@@ -1,12 +1,13 @@
 import { type CredentialKind, isActiveRun } from "@openvscan/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  deleteAccount,
   getAccount,
+  revokeOtherSessions,
   revokeSession,
-  setPassword,
+  unlinkGithubAccount,
   updateProfile,
 } from "@/lib/account-server";
-import { authClient } from "@/lib/auth-client";
 import {
   connectRepository,
   disconnectRepository,
@@ -150,66 +151,21 @@ function useAccountMutation<TVars, TResult>(
 }
 
 export const useUpdateProfileMutation = () =>
-  useAccountMutation((data: { name: string; image?: string | null }) =>
-    updateProfile({ data }),
-  );
-
-/** Better Auth client calls resolve to `{ error }`; turn that into a throw. */
-async function authCall(
-  call: Promise<{ error: { message?: string } | null }>,
-): Promise<void> {
-  const { error } = await call;
-  if (error) throw new Error(error.message || "Request failed");
-}
-
-export const useChangePasswordMutation = () =>
-  useAccountMutation(
-    (data: {
-      currentPassword: string;
-      newPassword: string;
-      signOutOthers: boolean;
-    }) =>
-      authCall(
-        authClient.changePassword({
-          currentPassword: data.currentPassword,
-          newPassword: data.newPassword,
-          revokeOtherSessions: data.signOutOthers,
-        }),
-      ),
-  );
-
-export const useSetPasswordMutation = () =>
-  useAccountMutation((newPassword: string) =>
-    setPassword({ data: { newPassword } }),
-  );
+  useAccountMutation((data: { name: string }) => updateProfile({ data }));
 
 export const useUnlinkGithubMutation = () =>
-  useAccountMutation((accountId: string) =>
-    authCall(authClient.unlinkAccount({ accountId })),
-  );
+  useAccountMutation((_?: undefined) => unlinkGithubAccount());
 
 export const useRevokeSessionMutation = () =>
   useAccountMutation((id: string) => revokeSession({ data: id }));
 
 export const useRevokeOtherSessionsMutation = () =>
-  useAccountMutation((_?: undefined) =>
-    authCall(authClient.revokeOtherSessions()),
-  );
+  useAccountMutation((_?: undefined) => revokeOtherSessions());
 
 export function useDeleteAccountMutation() {
   return useMutation({
-    // Password accounts confirm with the password; GitHub-only accounts need
-    // a recent sign-in (Better Auth's fresh-session rule).
-    mutationFn: (password?: string) =>
-      authCall(authClient.deleteUser(password ? { password } : {})).catch(
-        (err: Error) => {
-          throw /fresh|expired/i.test(err.message)
-            ? new Error(
-                "For your security, sign out and sign in again, then delete the account within a day.",
-              )
-            : err;
-        },
-      ),
+    mutationFn: (confirmEmail: string) =>
+      deleteAccount({ data: { confirmEmail } }),
   });
 }
 

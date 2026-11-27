@@ -1,9 +1,9 @@
 ---
 title: Register a GitHub App
-description: Create the GitHub App that receives pull request events, posts reviews and signs users in.
+description: Create the GitHub App that receives pull request events, posts reviews and links users' GitHub accounts.
 ---
 
-OpenVScan talks to GitHub through a GitHub App that you own. The App receives pull request and check run webhooks, posts check runs and comments, and mints short-lived read-only tokens for cloning. Its OAuth client is also what "Continue with GitHub" uses. This page walks through registering it and collecting the values you will set as secrets.
+OpenVScan talks to GitHub through a GitHub App that you own. The App receives pull request, comment and check run webhooks, posts check runs and comments, and mints short-lived read-only tokens for cloning. Its OAuth client is how users link their GitHub account, which OpenVScan checks before it connects an installation. This page walks through registering it and collecting the values you will set as secrets.
 
 You need your web origin before you start. See "Choose your web origin first" in the [Self-hosting guide](/docs/self-hosting). The examples use `https://openvscan.example.com`.
 
@@ -28,15 +28,16 @@ Create the App under the account that owns the repositories you want reviewed.
 </Step>
 <Step title="Identifying and authorizing users">
 
-These settings power "Continue with GitHub". OpenVScan uses Better Auth, which handles the OAuth callback at `/api/auth/callback/github`.
+These settings are for linking GitHub accounts. See [Linking GitHub](#linking-github).
 
 | Field | Value |
 |-------|-------|
-| Callback URL | `https://openvscan.example.com/api/auth/callback/github` |
+| Callback URL | `https://openvscan.example.com/api/github/link/callback` |
+| Expire user authorization tokens | Leave **checked** (the default). OpenVScan refreshes the tokens. |
 | Request user authorization (OAuth) during installation | Leave **unchecked**. When it is checked, GitHub disables the Setup URL below. |
 | Enable Device Flow | Leave unchecked. |
 
-You can add more callback URLs later, for example `http://localhost:3000/api/auth/callback/github` for local development.
+If users will sign in with GitHub through WorkOS, add a second callback URL: the GitHub redirect URI that the WorkOS dashboard shows for its GitHub connection. You can add more callback URLs later, for example `http://localhost:3000/api/github/link/callback` for local development.
 
 </Step>
 <Step title="Post installation">
@@ -75,11 +76,12 @@ Under **Repository permissions**:
 | Checks | Read and write | Creating and updating the "OpenVScan Security Review" check run and its annotations. |
 | Pull requests | Read and write | Reading PR files, posting the inline review and the summary comment. |
 | Contents | Read-only | Cloning the PR head in the sandbox, with a token scoped to that one repository. |
+| Issues | Read-only | Receiving the **Issue comment** event for `@<app>` comment commands. GitHub hides that event until this permission is set. |
 | Metadata | Read-only | Required by GitHub for every App. |
 
 Under **Organization permissions**, set **Members** to **Read-only**. When someone connects an installation on an organization, OpenVScan checks with their GitHub token that they are an admin of that organization.
 
-Under **Account permissions**, set **Email addresses** to **Read-only**. Better Auth reads the user's email from GitHub when they sign in, and users who keep their email private only expose it through this permission.
+Under **Account permissions**, set **Email addresses** to **Read-only**. When users sign in with GitHub through WorkOS, WorkOS reads their email from GitHub, and users who keep their email private only expose it through this permission.
 
 Leave everything else at **No access**.
 
@@ -89,6 +91,7 @@ Leave everything else at **No access**.
 Under **Subscribe to events**, check:
 
 - **Pull request**: opened, pushed to, reopened, marked ready for review, or closed.
+- **Issue comment** (appears once **Issues** is set to read-only): lets people with write access drive reviews with `@<app> review`, `pause`, `resume` and `help` comments.
 - **Check run**: lets the **Re-run** button on the OpenVScan check start a new review.
 - **Repository**: keeps renamed, transferred, made-private or deleted repositories in sync.
 
@@ -127,22 +130,34 @@ Anyone with the private key can act as your App on every installation. Store it 
 
 </Callout>
 
-## Sign in with GitHub
+## Linking GitHub
 
-"Continue with GitHub" is enabled when both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set on the web Worker. Use the client ID and secret of this same App.
+Signing in and linking GitHub are separate. Users sign in through WorkOS AuthKit (see [Configuration](/docs/configuration#sign-in-with-workos)). Linking GitHub uses this App's own OAuth client, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, through `/api/github/link` and back to `/api/github/link/callback`. Users link GitHub under **Settings → GitHub account**. Connecting an installation without a linked account fails with a message asking them to link it.
 
-On a self-hosted deployment you should treat this as required. When a user returns from installing the App, the web Worker checks that they administer the installation's account before linking it:
+The tokens are GitHub App user tokens. OpenVScan seals them with `CREDENTIALS_KEY`, refreshes them when they expire after eight hours, and uses them only to check installation access. One GitHub account can be linked to one OpenVScan user.
+
+When a user returns from installing the App, the web Worker checks that they administer the installation's account before linking it:
 
 - **Personal account**: the user's linked GitHub account must be the account the App was installed on.
 - **Organization**: the user must be an active admin of the organization, checked with `GET /user/memberships/orgs/{org}` and their GitHub token. This needs the **Members** organization permission above.
 
-An installation stays with the OpenVScan user who connected it first. Nobody else can connect it again or take over its repositories. A user who has never signed in with GitHub (or linked GitHub in Settings) cannot connect an installation.
+An installation stays with the OpenVScan user who connected it first. Nobody else can connect it again or take over its repositories. A user without a linked GitHub account cannot connect an installation.
+
+### Link GitHub at sign-in
+
+If you enable GitHub as a sign-in method in WorkOS, you can have it link GitHub too, so users who sign in with GitHub skip the separate link step:
+
+1. In the WorkOS dashboard, configure the GitHub connection with this App's client ID and client secret, not a separate OAuth App.
+2. Turn on the option to return GitHub OAuth tokens.
+3. Add the GitHub redirect URI that WorkOS shows to this App's callback URLs, next to `/api/github/link/callback`.
+
+On sign-in, OpenVScan saves the returned token as the user's linked GitHub account. Users who sign in another way link GitHub in **Settings**.
 
 ## A second App for local development
 
 GitHub sends webhooks to one URL per App. If you also run OpenVScan locally, register a second App for development with:
 
-- Callback URL `http://localhost:3000/api/auth/callback/github`
+- Callback URL `http://localhost:3000/api/github/link/callback`, plus the WorkOS GitHub redirect URI of your staging environment if you sign in with GitHub there
 - Setup URL `http://localhost:3000/api/github/setup`
 - Webhook URL pointing at a tunnel to port 3000
 

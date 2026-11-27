@@ -2,8 +2,10 @@ import {
   CREDENTIAL_INFO,
   CREDENTIAL_KINDS,
   type CredentialKind,
+  codexPlanLabel,
   emptyCounts,
   isActiveRun,
+  parseCodexAuthFile,
   SEVERITIES,
   type Severity,
   sealSecret,
@@ -235,6 +237,17 @@ export const saveCredential = createServerFn({ method: "POST" })
       throw new Error("Unknown credential type");
     }
     const secret = typeof data.secret === "string" ? data.secret.trim() : "";
+    if (data.kind === "codex_chatgpt_login") {
+      if (secret.length > 64_000)
+        throw new Error("That auth.json is too large");
+      // Keep only the tokens; the rest of the file isn't needed.
+      const login = parseCodexAuthFile(secret);
+      return {
+        kind: data.kind,
+        secret: JSON.stringify(login),
+        hint: codexPlanLabel(login),
+      };
+    }
     if (secret.length < 20 || secret.length > 4000) {
       throw new Error(
         "That doesn't look like a valid token (expected 20–4000 characters)",
@@ -249,6 +262,7 @@ export const saveCredential = createServerFn({ method: "POST" })
       (k) =>
         k !== data.kind &&
         k !== "openai_api_key" && // "sk-" is too generic to infer from
+        CREDENTIAL_INFO[k].prefix &&
         secret.startsWith(CREDENTIAL_INFO[k].prefix ?? "\u0000"),
     );
     if (looksLike) {
@@ -256,7 +270,7 @@ export const saveCredential = createServerFn({ method: "POST" })
         `This looks like a ${CREDENTIAL_INFO[looksLike].label}, not a ${CREDENTIAL_INFO[data.kind].label}`,
       );
     }
-    return { kind: data.kind, secret };
+    return { kind: data.kind, secret, hint: secretHint(secret) };
   })
   .handler(async ({ data }) => {
     const userId = await requireUserId();
@@ -283,7 +297,7 @@ export const saveCredential = createServerFn({ method: "POST" })
       provider,
       ciphertext: sealed.ciphertext,
       iv: sealed.iv,
-      hint: secretHint(data.secret),
+      hint: data.hint,
       lastUsedAt: null,
     };
     if (existing) {

@@ -8,8 +8,8 @@ import {
   normalizePrivateKey,
 } from "@openvscan/github";
 import { and, eq } from "drizzle-orm";
-import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
+import { githubUserToken, linkedGithub } from "@/lib/github-account";
 import { getEnv } from "@/src/lib/env";
 
 /**
@@ -46,26 +46,6 @@ export class InstallationAccessError extends Error {
   }
 }
 
-/** The signed-in user's GitHub token (decrypted and refreshed by Better Auth). */
-export async function githubUserToken(userId: string): Promise<string | null> {
-  const account = await getDb().query.account.findFirst({
-    where: and(
-      eq(schema.account.userId, userId),
-      eq(schema.account.providerId, "github"),
-    ),
-    columns: { id: true },
-  });
-  if (!account) return null;
-  try {
-    const { accessToken } = await getAuth().api.getAccessToken({
-      body: { accountId: account.id, userId },
-    });
-    return accessToken ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Prove the signed-in user administers the installation's account before we
  * bind it to them. The setup redirect's `installation_id` is user-controlled,
@@ -78,16 +58,10 @@ async function verifyInstallationAdmin(
   userId: string,
   account: InstallationAccount,
 ) {
-  const githubAccount = await getDb().query.account.findFirst({
-    where: and(
-      eq(schema.account.userId, userId),
-      eq(schema.account.providerId, "github"),
-    ),
-    columns: { accountId: true },
-  });
+  const githubAccount = await linkedGithub(userId);
   if (!githubAccount) throw new InstallationAccessError("github_not_linked");
   if (account.type === "User") {
-    if (githubAccount.accountId === account.id) return;
+    if (githubAccount.githubId === account.id) return;
     throw new InstallationAccessError("not_admin");
   }
 

@@ -2,13 +2,15 @@
 
 Open-source security review for GitHub pull requests. On every PR, OpenVScan
 checks out the code in an isolated container, runs open-source scanners
-(Trivy, Opengrep, Gitleaks), then has a coding agent (Claude Code or Codex,
+(Trivy, Opengrep, Gitleaks), then has a coding agent (Claude Code, Codex or Cursor,
 running on **your own** subscription or API key) triage those findings and
 review the diff. Results land on the PR as a check run, inline review comments
 and a summary comment, and in the dashboard.
 
-It runs entirely on Cloudflare: Workers, Workflows, Containers, D1 and R2.
-Self-host it on your own account, or use the hosted version.
+It runs on Cloudflare: Workers, Workflows, Containers, D1 and R2. Sandboxes
+can run on your own [Daytona](https://www.daytona.io) account instead of
+Cloudflare Containers. Self-host it on your own account, or use the hosted
+version.
 
 ## What a review does
 
@@ -44,7 +46,7 @@ Pre-existing issues elsewhere in the repo are reported but never block a PR.
 
 ```
 GitHub ──webhook──► web Worker (TanStack Start)          D1: users, repos, PRs, runs, findings
-                     ├─ dashboard + Better Auth            R2: raw scanner output, diffs
+                     ├─ dashboard, WorkOS sign-in, MCP     R2: raw scanner output, diffs
                      └─ ENGINE.startRun(runId)  ──RPC──► engine Worker
                                                           └─ ReviewWorkflow (durable steps)
                                                               └─ ScanSandbox (Durable Object + Container)
@@ -53,9 +55,9 @@ GitHub ──webhook──► web Worker (TanStack Start)          D1: users, re
 
 | Part | Path | Notes |
 |------|------|-------|
-| Web Worker | `web/` | UI, auth, GitHub webhook and install callback, credential storage. Calls the engine over a service binding. |
+| Web Worker | `web/` | UI, sign-in (WorkOS AuthKit), GitHub webhook and install callback, credential storage, MCP server at `/mcp`. Calls the engine over a service binding. |
 | Engine Worker | `engine/` | `EngineApi` (RPC), `ReviewWorkflow`, `ScanSandbox` container, `Outbound` egress proxy. |
-| Container image | `engine/container/` | Debian + Trivy (DB baked in), Opengrep and its rules, Gitleaks, Claude Code, Codex. |
+| Container image | `engine/container/` | Debian + Trivy (DB baked in), Opengrep and its rules, Gitleaks, Claude Code, Codex, Cursor CLI. |
 | Shared | `packages/core`, `packages/db`, `packages/github` | Enums, zod schemas, crypto; Drizzle schema and migrations; GitHub App helpers (check runs, reviews, comments). |
 
 ### Sandbox security model
@@ -72,7 +74,7 @@ and limits what a compromised agent can do:
   |-------|---------|
   | checkout | `git fetch` of the one repository under review |
   | scan | GET from the Trivy DB mirrors |
-  | agent | `api.anthropic.com` or `api.openai.com` only |
+  | agent | `api.anthropic.com`, `api.openai.com`, the Codex backend on `chatgpt.com`, or `*.cursor.sh` only |
   | otherwise | nothing |
 
 - **Secrets never enter the container.**
@@ -97,7 +99,10 @@ In **Settings → AI agents**, each user saves one of these:
 |------------|-------|---------------|
 | Claude subscription token | Claude Code | `claude setup-token` |
 | Anthropic API key | Claude Code | console.anthropic.com |
+| ChatGPT login | Codex | `codex login --device-auth`, paste `auth.json` |
+| Codex access token | Codex | ChatGPT Business/Enterprise admin |
 | OpenAI API key | Codex | platform.openai.com |
+| Cursor API key | Cursor | Cursor Dashboard → API Keys (bills your Cursor plan) |
 
 Credentials are encrypted at rest with AES-256-GCM using `CREDENTIALS_KEY`, and
 the row id is bound in as additional data. Only the engine decrypts them, at
@@ -134,17 +139,37 @@ Go to GitHub → Settings → Developer settings → GitHub Apps → New.
 | Webhook URL | `https://<web-origin>/api/github/webhook` |
 | Setup URL | `https://<web-origin>/api/github/setup` (enable "Redirect on update") |
 | Webhook secret | random string → `GITHUB_WEBHOOK_SECRET` |
-| Repository permissions | **Checks**: read & write · **Pull requests**: read & write · **Contents**: read · **Metadata**: read |
+| Repository permissions | **Checks**: read & write · **Pull requests**: read & write · **Contents**: read · **Issues**: read · **Metadata**: read |
 | Organization permissions | **Members**: read (lets org admins connect an org installation) |
-| Account permissions | **Email addresses**: read (for "Continue with GitHub") |
-| Events | **Pull request**, **Check run**, **Repository** (installation events are sent automatically) |
+| Account permissions | **Email addresses**: read (WorkOS reads it on GitHub sign-in) |
+| Events | **Pull request**, **Issue comment**, **Check run**, **Repository** (installation events are sent automatically) |
 
-Generate a private key (`.pem`) and a client secret. The App's own OAuth
-client ID/secret power "Continue with GitHub", which is also how OpenVScan
-verifies who may connect an installation, so set its callback URL to
-`https://<web-origin>/api/auth/callback/github`.
+Generate a private key (`.pem`) and a client secret. Users link their GitHub
+account through the App's own OAuth client, which is how OpenVScan verifies
+who may connect an installation, so set its callback URL to
+`https://<web-origin>/api/github/link/callback`. If users sign in with GitHub
+through WorkOS, give WorkOS's GitHub connection this App's client ID/secret,
+enable "Return GitHub OAuth tokens", and add the WorkOS GitHub redirect URI as
+a second callback URL; GitHub is then linked at sign-in.
 
-### 3. Secrets
+### 3. Set up WorkOS AuthKit
+
+Sign-in uses OpenVScan's own pages on top of WorkOS user management (WorkOS
+keeps the passwords and sends the verification and reset emails; OpenVScan
+sends no email). In the WorkOS dashboard:
+
+- add `https://<web-origin>/api/auth/callback` as a redirect URI and
+  `https://<web-origin>/` as the default Sign-out URI, and
+  `https://<web-origin>/signin` as the Initiate login URI,
+- enable Email + Password with email verification, and set the Password reset
+  URL to `https://<web-origin>/reset-password`,
+- for the MCP server: enable CIMD and/or DCR for MCP clients (adding
+  `https://<web-origin>/mcp` as a resource indicator is optional).
+
+Set the client ID as the `WORKOS_CLIENT_ID` secret and, for MCP, the AuthKit
+domain in the `WORKOS_AUTHKIT_DOMAIN` var in `web/wrangler.jsonc`.
+
+### 4. Secrets
 
 Generate one encryption key and give the **same value** to both Workers:
 
@@ -154,7 +179,7 @@ openssl rand -base64 32
 
 | Worker | Secrets |
 |--------|---------|
-| web (`openvscan-web`) | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `VITE_APP_URL`, `CREDENTIALS_KEY`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` |
+| web (`openvscan-web`) | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `CREDENTIALS_KEY`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` (and set the `VITE_APP_URL` and `WORKOS_AUTHKIT_DOMAIN` vars in `web/wrangler.jsonc`) |
 | engine (`openvscan-engine`) | `CREDENTIALS_KEY`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` (and set the `APP_URL` var in `engine/wrangler.jsonc`) |
 
 ```bash
@@ -163,12 +188,10 @@ pnpm --filter openvscan-web exec wrangler secret put CREDENTIALS_KEY
 # …and the rest from the table
 ```
 
-Verification and password-reset email go through Cloudflare Email Service.
-Enable sending for your domain (`wrangler email sending enable <domain>`) and
-set `EMAIL_FROM` in `web/wrangler.jsonc` to an address on it. Without email,
-password reset is unavailable.
+`CREDENTIALS_KEY` also seals the session cookie and linked GitHub tokens, so
+rotating it signs everyone out.
 
-### 4. Deploy
+### 5. Deploy
 
 ```bash
 pnpm db:migrate   # apply D1 migrations (remote)
@@ -177,6 +200,11 @@ pnpm run deploy   # engine first (builds + pushes the image), then web
 
 The web Worker's `ENGINE` service binding requires the engine to exist, so
 deploy the engine first.
+
+> **Upgrading from Better Auth:** migration `0006_workos_auth` deletes every
+> user (and, by cascade, their installations, repositories, reviews and
+> credentials) and drops the old auth tables. Everyone signs up again through
+> WorkOS. See [Upgrading](https://openvscan.com/docs/upgrading).
 
 > **Upgrading from the old scanner (pre-PR-review versions):** migration
 > `0002_pr_review_pipeline` drops the old `project`, `scan`, `finding` and
@@ -187,14 +215,17 @@ deploy the engine first.
 ## Development
 
 ```bash
-cp web/.dev.vars.example web/.dev.vars          # same CREDENTIALS_KEY in both
+cp web/.dev.vars.example web/.dev.vars          # same CREDENTIALS_KEY in both; WorkOS staging keys
 cp engine/.dev.vars.example engine/.dev.vars
 pnpm db:migrate:local
 pnpm dev:engine      # http://localhost:8787 (needs Docker)
 pnpm dev:web         # http://localhost:3000, binds to the local engine
 ```
 
-Both Workers share the local D1/R2 state in `web/.wrangler/state`.
+Both Workers share the local D1/R2 state in `web/.wrangler/state`. Sign-in
+needs `WORKOS_CLIENT_ID` and `WORKOS_API_KEY` from a WorkOS staging environment
+in `web/.dev.vars`, with `http://localhost:3000/api/auth/callback` registered
+as a redirect URI there.
 
 To receive real webhooks locally, expose port 3000 with a tunnel such as
 `cloudflared tunnel --url http://localhost:3000` and point the App's webhook
@@ -217,11 +248,25 @@ curl -X POST localhost:8787/__dev/agent -d '{"kind":"anthropic_api_key","secret"
 | `pnpm lint` | Biome (web) |
 | `pnpm db:generate` | Drizzle migration from schema changes |
 
+## Use it from your coding agent
+
+OpenVScan is also an MCP server (Streamable HTTP, OAuth through AuthKit). Your
+agent can list reviews, read findings and fixes, start or re-run reviews and
+change repository settings, as you:
+
+```bash
+claude mcp add --transport http openvscan https://openvscan.com/mcp
+codex mcp add openvscan --url https://openvscan.com/mcp && codex mcp login openvscan
+```
+
+Self-hosted deployments use `https://<web-origin>/mcp`. See
+[MCP server](https://openvscan.com/docs/mcp).
+
 ## Licensing notes
 
 OpenVScan is AGPL-3.0-only. The container bundles third-party tools under
 their own licenses: Trivy (Apache-2.0), Gitleaks (MIT), Opengrep
-(LGPL-2.1), and Claude Code and Codex (under their vendors' terms).
+(LGPL-2.1), and Claude Code, Codex and the Cursor CLI (under their vendors' terms).
 
 The bundled rules have their own terms:
 - **opengrep-rules** is LGPL-2.1 with the Commons Clause. Review that before

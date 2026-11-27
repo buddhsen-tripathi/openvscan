@@ -1,8 +1,25 @@
+import {
+  PR_COMMAND_INFO,
+  PR_COMMANDS,
+  parsePrCommand,
+  REVIEW_TRIGGER_INFO,
+  type ReviewTrigger,
+  triggersReview,
+} from "@openvscan/core";
 import { chunk } from "@openvscan/db";
-import { CHECK_NAME, verifyWebhookSignature } from "@openvscan/github";
+import {
+  CHECK_NAME,
+  canPush,
+  getPullRequest,
+  type PullRequestData,
+  postComment,
+  reactToComment,
+  verifyWebhookSignature,
+} from "@openvscan/github";
 import { createFileRoute } from "@tanstack/react-router";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { octokitForInstallation } from "@/lib/github";
 import {
   cancelActiveRunsForPr,
   createAndStartRun,
@@ -12,31 +29,31 @@ import { getEnv } from "@/src/lib/env";
 
 /**
  * GitHub App webhook. Events (configure on the App):
- *   pull_request, check_run, installation, installation_repositories,
- *   repository
+ *   pull_request, issue_comment, check_run, installation,
+ *   installation_repositories, repository
  *
- * A PR open/push/reopen/ready-for-review creates a review run and hands it
- * to the engine; the engine reports back through a Check Run, a PR review
- * and a sticky summary comment.
+ * A PR event that matches the repository's review trigger, or an
+ * `@<app> review` comment, creates a review run and hands it to the engine;
+ * the engine reports back through a Check Run, a PR review and a sticky
+ * summary comment.
  */
 
 const ok = () => new Response("ok", { status: 200 });
 
-type GhUser = { login: string; avatar_url?: string };
-
 type PullRequestPayload = {
   action: string;
-  number: number;
-  pull_request: {
-    number: number;
-    title: string;
-    html_url: string;
-    state: "open" | "closed";
-    merged?: boolean;
-    draft?: boolean;
-    user: GhUser;
-    head: { ref: string; sha: string; repo: { full_name: string } | null };
-    base: { ref: string; sha: string };
+  pull_request: PullRequestData;
+  repository: RepoPayload;
+};
+
+type IssueCommentPayload = {
+  action: string;
+  issue: { number: number; pull_request?: unknown };
+  comment: {
+    id: number;
+    body: string;
+    user: { login: string; type: string };
+    author_association: string;
   };
   repository: RepoPayload;
 };
@@ -61,17 +78,12 @@ type CheckRunPayload = {
   repository: { id: number };
 };
 
-const REVIEW_ACTIONS = new Set([
-  "opened",
-  "reopened",
-  "synchronize",
-  "ready_for_review",
-]);
-
 function connectedRepo(githubRepoId: number) {
   return getDb().query.repository.findFirst({
     where: eq(schema.repository.githubRepoId, String(githubRepoId)),
-    with: { installation: { columns: { suspendedAt: true } } },
+    with: {
+      installation: { columns: { installationId: true, suspendedAt: true } },
+    },
   });
 }
 
@@ -104,10 +116,7 @@ async function syncRepoMetadata(
 }
 
 /** Insert or refresh our copy of the PR from the webhook payload. */
-async function upsertPullRequest(
-  repositoryId: string,
-  pr: PullRequestPayload["pull_request"],
-) {
+async function upsertPullRequest(repositoryId: string, pr: PullRequestData) {
   const db = getDb();
   const values = {
     title: pr.title.slice(0, 500),
@@ -166,9 +175,12 @@ async function handlePullRequest(payload: PullRequestPayload) {
     await cancelActiveRunsForPr(pr.id, "Pull request closed");
     return;
   }
-  if (!REVIEW_ACTIONS.has(payload.action)) return; // edited, labeled, …
-  if (!repo.autoReview || installation.suspendedAt) return;
+  if (!triggersReview(repo.reviewTrigger, payload.action)) return;
+  if (installation.suspendedAt || pr.paused) return;
   if (pr.draft && repo.skipDrafts) return;
+  if (repo.baseBranches.length && !repo.baseBranches.includes(pr.baseRef)) {
+    return;
+  }
 
   // GitHub redelivers webhooks; don't review the same commit twice.
   const db = getDb();
@@ -191,6 +203,101 @@ async function handlePullRequest(payload: PullRequestPayload) {
     headSha: pr.headSha,
     baseSha: pr.baseSha,
   });
+}
+
+/**
+ * A cheap first filter before asking GitHub. MEMBER and COLLABORATOR don't
+ * imply write access (a read-only org member is MEMBER), so `canPush` decides.
+ */
+const MAYBE_WRITERS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+/** `@<app> review | pause | resume | help` in a PR conversation comment. */
+async function handleIssueComment(payload: IssueCommentPayload) {
+  if (payload.action !== "created" || !payload.issue.pull_request) return;
+  const { comment } = payload;
+  if (comment.user.type === "Bot") return;
+  const slug = getEnv("GITHUB_APP_SLUG");
+  const command = slug ? parsePrCommand(comment.body, slug) : null;
+  if (!command || !MAYBE_WRITERS.has(comment.author_association)) return;
+  const found = await connectedRepo(payload.repository.id);
+  if (!found || found.installation.suspendedAt) return;
+  const { installation, ...repo } = found;
+
+  const octokit = octokitForInstallation(installation.installationId);
+  // Only people who can push may spend the owner's AI quota or pause reviews.
+  if (
+    !(await canPush(octokit, {
+      owner: repo.owner,
+      repo: repo.name,
+      username: comment.user.login,
+    }))
+  )
+    return;
+  const target = {
+    owner: repo.owner,
+    repo: repo.name,
+    prNumber: payload.issue.number,
+  };
+  await reactToComment(octokit, {
+    owner: repo.owner,
+    repo: repo.name,
+    commentId: comment.id,
+    content: "eyes",
+  });
+  const pr = await upsertPullRequest(
+    repo.id,
+    await getPullRequest(octokit, repo.owner, repo.name, payload.issue.number),
+  );
+  const reply = (body: string) => postComment(octokit, { ...target, body });
+
+  switch (command) {
+    case "review":
+      if (pr.state !== "open") {
+        await reply(
+          "This pull request is closed, so there's nothing to review.",
+        );
+        return;
+      }
+      await cancelActiveRunsForPr(pr.id, "Superseded by a review request");
+      await createAndStartRun({
+        repo,
+        pullRequest: pr,
+        trigger: "command",
+        headRef: pr.headRef,
+        headSha: pr.headSha,
+        baseSha: pr.baseSha,
+      });
+      return;
+    case "pause":
+    case "resume":
+      await getDb()
+        .update(schema.pullRequest)
+        .set({ paused: command === "pause" })
+        .where(eq(schema.pullRequest.id, pr.id));
+      await reply(
+        command === "pause"
+          ? `Automatic reviews are paused on this pull request. Comment \`@${slug} resume\` to turn them back on, or \`@${slug} review\` for a one-off review.`
+          : `Automatic reviews are on for this pull request. ${REVIEW_TRIGGER_INFO[repo.reviewTrigger].description}`,
+      );
+      return;
+    case "help":
+      await reply(helpText(slug!, repo.reviewTrigger));
+  }
+}
+
+function helpText(slug: string, trigger: ReviewTrigger): string {
+  const rows = PR_COMMANDS.map(
+    (c) => `| \`@${slug} ${c}\` | ${PR_COMMAND_INFO[c]} |`,
+  );
+  return [
+    "**OpenVScan commands** (for people with write access)",
+    "",
+    "| Command | What it does |",
+    "| --- | --- |",
+    ...rows,
+    "",
+    `Automatic reviews here: **${REVIEW_TRIGGER_INFO[trigger].label}**. ${REVIEW_TRIGGER_INFO[trigger].description}`,
+  ].join("\n");
 }
 
 /** "Re-run" clicked on our check in the GitHub UI. */
@@ -327,6 +434,11 @@ export const Route = createFileRoute("/api/github/webhook")({
           switch (event) {
             case "pull_request":
               await handlePullRequest(payload as unknown as PullRequestPayload);
+              break;
+            case "issue_comment":
+              await handleIssueComment(
+                payload as unknown as IssueCommentPayload,
+              );
               break;
             case "check_run":
               await handleCheckRun(payload as unknown as CheckRunPayload);

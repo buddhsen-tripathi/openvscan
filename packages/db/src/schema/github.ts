@@ -1,4 +1,11 @@
-import { AGENT_PROVIDERS, CREDENTIAL_KINDS, FAIL_THRESHOLDS, type Scanner } from "@openvscan/core";
+import {
+  AGENT_PROVIDERS,
+  CREDENTIAL_KINDS,
+  FAIL_THRESHOLDS,
+  REVIEW_TRIGGERS,
+  type ReviewFocus,
+  type Scanner,
+} from "@openvscan/core";
 import { relations } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { user } from "./auth";
@@ -49,8 +56,8 @@ export const repository = sqliteTable(
     fullName: text("full_name").notNull(),
     defaultBranch: text("default_branch").notNull().default("main"),
     private: integer("private", { mode: "boolean" }).default(false).notNull(),
-    /** Review every PR automatically (opened / synchronize / reopened). */
-    autoReview: integer("auto_review", { mode: "boolean" }).default(true).notNull(),
+    /** When PRs are reviewed without a comment command. */
+    reviewTrigger: text("review_trigger", { enum: REVIEW_TRIGGERS }).default("push").notNull(),
     /** Skip draft PRs until they're marked ready for review. */
     skipDrafts: integer("skip_drafts", { mode: "boolean" }).default(true).notNull(),
     scanners: text("scanners", { mode: "json" })
@@ -63,6 +70,12 @@ export const repository = sqliteTable(
     agentModel: text("agent_model"),
     /** Extra reviewer instructions appended to the agent prompt. */
     instructions: text("instructions"),
+    /** Prompt presets that steer the AI review. */
+    focus: text("focus", { mode: "json" }).$type<ReviewFocus[]>().default([]).notNull(),
+    /** Base branches whose PRs are reviewed automatically; empty = all. */
+    baseBranches: text("base_branches", { mode: "json" }).$type<string[]>().default([]).notNull(),
+    /** Globs for files whose findings are dropped. */
+    ignorePaths: text("ignore_paths", { mode: "json" }).$type<string[]>().default([]).notNull(),
     failOn: text("fail_on", { enum: FAIL_THRESHOLDS }).default("high").notNull(),
     ...timestamps,
   },

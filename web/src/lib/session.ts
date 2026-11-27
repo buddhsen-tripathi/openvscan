@@ -1,5 +1,7 @@
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { eq } from "drizzle-orm";
+import { getDb, schema } from "@/lib/db";
 import { currentSession } from "@/lib/user";
 
 /** Whether the request is signed in. Never returns the session itself. */
@@ -18,9 +20,10 @@ export function safeRedirect(value: unknown): string | null {
   if (!value.startsWith("/") || /[\\\u0000-\u001f\u007f]/.test(value))
     return null;
   const url = new URL(value, "http://x");
-  return url.origin === "http://x"
-    ? `${url.pathname}${url.search}${url.hash}`
-    : null;
+  if (url.origin !== "http://x") return null;
+  const path = `${url.pathname}${url.search}${url.hash}`;
+  // "/..//evil.com" normalizes to "//evil.com", another host.
+  return path.startsWith("//") ? null : path;
 }
 
 export const requireSession = createServerFn({ method: "GET" })
@@ -29,7 +32,12 @@ export const requireSession = createServerFn({ method: "GET" })
   }))
   .handler(async ({ data }) => {
     const session = await currentSession();
-    if (!session) {
+    const user = session
+      ? await getDb().query.user.findFirst({
+          where: eq(schema.user.id, session.userId),
+        })
+      : null;
+    if (!user) {
       throw redirect({
         to: "/signin",
         search: data.returnTo ? { redirect: data.returnTo } : {},
@@ -38,9 +46,9 @@ export const requireSession = createServerFn({ method: "GET" })
 
     return {
       user: {
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image ?? null,
+        name: user.name,
+        email: user.email,
+        image: user.image ?? null,
       },
     };
   });

@@ -23,7 +23,7 @@ export function SegmentedControl<T extends string | null>({
         gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
       }}
       className={cn(
-        "grid min-w-0 gap-1 rounded-[8px] bg-muted p-1 text-[13px]",
+        "grid min-w-0 gap-1 rounded-[10px] bg-muted p-1 text-[13px]",
         className,
       )}
     >
@@ -36,7 +36,7 @@ export function SegmentedControl<T extends string | null>({
           className={cn(
             "rounded-[6px] px-2 py-1.5 transition-colors",
             value === o.value
-              ? "bg-card font-medium text-foreground shadow-card"
+              ? "bg-card font-medium text-foreground shadow-edge"
               : "text-muted-foreground hover:text-foreground",
           )}
         >

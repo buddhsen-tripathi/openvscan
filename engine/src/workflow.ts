@@ -1,10 +1,14 @@
 import {
+  AGENT_INFO,
   type AgentProvider,
+  type CodexLogin,
   countBySeverity,
   CREDENTIAL_INFO,
   type FailThreshold,
   openSecret,
   isRelevant,
+  matchesPath,
+  type ReviewFocus,
   type Scanner,
   SCANNERS,
   type ScannerStat,
@@ -16,6 +20,7 @@ import {
   createCheckRun,
   createReadOnlyRepoToken,
   createReview,
+  repoTarballUrl,
   upsertSummaryComment,
 } from "@openvscan/github";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
@@ -24,6 +29,7 @@ import {
   agentFailure,
   agentInvocation,
   buildPrompt,
+  CODEX_HOME,
   filterAgentFindings,
   DIFF_PATH,
   FINDINGS_PATH,
@@ -33,6 +39,8 @@ import {
   TASK_DIR,
   WORK_DIR,
 } from "./agent";
+import { CodexLoginRejected, sandboxAuthFile, usableCodexLogin } from "./codex";
+import { CursorKeyRejected, cursorAccessToken, sandboxCursorToken } from "./cursor";
 import {
   appCreds,
   batchAll,
@@ -63,7 +71,9 @@ import {
   type ReportFinding,
   sanitize,
 } from "./report";
-import { type ScanSandbox, sandboxFor } from "./sandbox";
+import type { EgressPolicy } from "./outbound";
+import { type Box, CHECKOUT_MARKER } from "./box";
+import { runBoxes } from "./sandbox";
 import {
   capFindings,
   type NormalizedFinding,
@@ -99,6 +109,8 @@ interface RunContext {
   agentModel: string | null;
   failOn: FailThreshold;
   instructions: string | null;
+  focus: ReviewFocus[];
+  ignorePaths: string[];
 }
 
 const AI_POLL_INTERVAL = "30 seconds";
@@ -111,7 +123,10 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
   async run(event: Readonly<WorkflowEvent<ReviewParams>>, step: WorkflowStep) {
     const { runId } = event.payload;
     const env = this.env;
-    const sb = () => sandboxFor(env, runId);
+    // Scanners and the agent share one sandbox, except in Daytona's hybrid mode.
+    const scanBox = () => runBoxes(env, runId).scan;
+    const agentBox = () => runBoxes(env, runId).agent;
+    const destroyAll = () => Promise.all(runBoxes(env, runId).all.map((b) => b.destroy()));
     let checkRunId: string | null = null;
     let ctx: RunContext | null = null;
 
@@ -140,7 +155,7 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
         const db = getDb(env);
         await updateRun(db, runId, { phase: "checkout" });
         await logRun(db, runId, "info", `Checking out ${c.fullName}@${c.headSha.slice(0, 7)}`);
-        await checkout(env, sb(), c);
+        await checkout(env, scanBox(), c);
         return true;
       });
 
@@ -159,7 +174,7 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
           stats[name] = await step.do(
             `scan:${name}`,
             { retries: { limit: 1, delay: "10 seconds" }, timeout: "20 minutes" },
-            async () => runScanner(env, sb(), c, name),
+            async () => runScanner(env, scanBox(), c, name),
           );
         } catch (err) {
           stats[name] = { status: "failed", findings: 0, error: errMsg(err) };
@@ -171,6 +186,8 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
       }
       await step.do("scan:stats", async () => {
         await updateRun(getDb(env), runId, { scannerStats: stats });
+        // Hybrid: the scan sandbox is done; the agent gets its own.
+        if (scanBox().backend !== agentBox().backend) await scanBox().destroy();
         return true;
       });
 
@@ -178,21 +195,21 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
       if (c.agent) {
         try {
           const started = await step.do("ai:start", { retries: { limit: 1, delay: "10 seconds" } }, async () =>
-            startAgent(env, sb(), c, diffInfo),
+            startAgent(env, agentBox(), c, diffInfo),
           );
           let outcome: { state: string; exitCode?: number } = { state: started.ok ? "running" : "skipped" };
           for (let i = 0; started.ok && i < AI_MAX_POLLS && outcome.state === "running"; i++) {
             await step.sleep(`ai:wait:${i}`, AI_POLL_INTERVAL);
             outcome = await step.do(`ai:poll:${i}`, async () => {
               if (await isCancelled(getDb(env), runId)) return { state: "cancelled" };
-              const s = await sb().taskState(TASK_DIR);
+              const s = await agentBox().taskState(TASK_DIR);
               return s.state === "exited" ? { state: "exited", exitCode: s.exitCode } : { state: s.state };
             });
           }
-          await step.do("ai:collect", async () => collectAgent(env, sb(), c, started, outcome));
+          await step.do("ai:collect", async () => collectAgent(env, agentBox(), c, started, outcome));
         } catch (err) {
           await step.do("ai:failed", async () => {
-            await sb().lockEgress().catch(() => {});
+            await agentBox().lockEgress().catch(() => {});
             const db = getDb(env);
             await updateRun(db, runId, { aiError: errMsg(err) });
             await logRun(db, runId, "error", `AI review failed: ${errMsg(err)}`);
@@ -206,7 +223,7 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
         publish(env, c, checkRunId, stats),
       );
       await step.do("cleanup", async () => {
-        await sb().destroy();
+        await destroyAll();
         return true;
       });
       return result;
@@ -232,7 +249,7 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
             summary: `OpenVScan hit an error and could not finish this review:\n\n> ${sanitize(message, 500)}\n\n[Open in OpenVScan](${runUrl(env, runId)})`,
           }).catch(() => {});
         }
-        await sb().destroy().catch(() => {});
+        await destroyAll().catch(() => {});
         return true;
       });
       return { failed: true, error: message };
@@ -282,6 +299,8 @@ async function loadContext(db: Db, runId: string): Promise<RunContext | null> {
     agentModel: run.agentModel,
     failOn: run.failOn,
     instructions: run.instructions,
+    focus: run.focus,
+    ignorePaths: run.ignorePaths,
   };
 }
 
@@ -334,16 +353,27 @@ async function loadDiffMap(env: Env, runId: string): Promise<DiffMap | null> {
 }
 
 /**
- * Shallow-fetch exactly the head commit through the egress proxy, which adds
- * a read-only token scoped to this one repository. Works for fork PRs too:
- * GitHub serves PR head commits from the base repository.
+ * Check out exactly the head commit. Works for fork PRs too: GitHub serves
+ * PR head commits from the base repository.
+ *
+ * Cloudflare: a shallow git fetch through the egress proxy, which adds a
+ * read-only token scoped to this one repository. Daytona: a codeload
+ * tarball URL that expires within minutes, so no token enters the sandbox.
  */
-async function checkout(env: Env, sb: DurableObjectStub<ScanSandbox>, c: RunContext): Promise<void> {
+async function checkout(env: Env, sb: Box, c: RunContext): Promise<void> {
   await sb.start();
-  const token = await createReadOnlyRepoToken(
-    { ...appCreds(env), installationId: c.installationId },
-    c.repo,
-  );
+  const creds = { ...appCreds(env), installationId: c.installationId };
+  if (sb.backend === "daytona") {
+    const url = await repoTarballUrl(creds, c.owner, c.repo, c.headSha);
+    await sb.setEgress({ phase: "checkout", repo: c.fullName, githubToken: "" });
+    try {
+      await extractTarball(sb, url, c.headSha);
+    } finally {
+      await sb.lockEgress();
+    }
+    return;
+  }
+  const token = await createReadOnlyRepoToken(creds, c.repo);
   await sb.setEgress({ phase: "checkout", repo: c.fullName, githubToken: token });
   try {
     const res = await sb.exec(
@@ -355,12 +385,14 @@ rm -rf "$1" && git init -q "$1" && cd "$1"
 git remote add origin "$2"
 git fetch -q --no-tags --depth=1 origin "$3"
 git -c advice.detachedHead=false checkout -q FETCH_HEAD
-mkdir -p "$4"`,
+mkdir -p "$4"
+echo "$3" >"$5"`,
         "checkout",
         REPO_DIR,
         `https://github.com/${c.fullName}.git`,
         c.headSha,
         OUT_DIR,
+        CHECKOUT_MARKER,
       ],
       { timeoutSec: 600 },
     );
@@ -372,18 +404,51 @@ mkdir -p "$4"`,
   }
 }
 
-/** Re-checkout if the container was replaced since the checkout step. */
-async function ensureRepo(env: Env, sb: DurableObjectStub<ScanSandbox>, c: RunContext) {
+/** Download and unpack a repository tarball into REPO_DIR (no .git). */
+export async function extractTarball(sb: Box, url: string, sha: string): Promise<void> {
+  const res = await sb.exec(
+    [
+      "sh",
+      "-c",
+      `set -e
+rm -rf "$1" "$3" && mkdir -p "$1" "$3"
+curl -fsSL --retry 2 "$2" | tar -xz --strip-components=1 -C "$1"
+echo "$4" >"$5"`,
+      "checkout",
+      REPO_DIR,
+      url,
+      OUT_DIR,
+      sha,
+      CHECKOUT_MARKER,
+    ],
+    { timeoutSec: 600 },
+  );
+  if (res.exitCode !== 0) {
+    // The URL carries a token for private repositories: keep it out of logs.
+    const out = res.stderr.replaceAll(url, "<tarball>").trim().slice(-500);
+    throw new Error(`checkout failed (${res.exitCode}): ${out}`);
+  }
+}
+
+/** Check out again if the sandbox is new or was replaced since the checkout step. */
+async function ensureRepo(env: Env, sb: Box, c: RunContext) {
   const { fresh } = await sb.start();
-  if (fresh || !(await sb.exists(`${REPO_DIR}/.git`))) {
-    await logRun(getDb(env), c.runId, "warn", "Sandbox was recycled; checking out again");
+  if (fresh || !(await sb.exists(CHECKOUT_MARKER))) {
+    // Expected in hybrid mode, where the agent's sandbox is not the scanners'.
+    const expected = sb.backend !== runBoxes(env, c.runId).scan.backend;
+    await logRun(
+      getDb(env),
+      c.runId,
+      expected ? "info" : "warn",
+      expected ? "Checking out for the AI review" : "Sandbox was recycled; checking out again",
+    );
     await checkout(env, sb, c);
   }
 }
 
 async function runScanner(
   env: Env,
-  sb: DurableObjectStub<ScanSandbox>,
+  sb: Box,
   c: RunContext,
   name: Scanner,
 ): Promise<ScannerStat> {
@@ -417,7 +482,7 @@ async function runScanner(
   if (raw == null) throw new Error(`${name} produced no output`);
   await env.ARTIFACTS.put(`runs/${c.runId}/${name}.json`, raw);
 
-  const parsed = capFindings(spec.parse(raw));
+  const parsed = capFindings(spec.parse(raw).filter((f) => !isIgnored(c, f.filePath)));
   const diff = c.isPr ? await loadDiffMap(env, c.runId) : null;
   const rows = await Promise.all(parsed.map((f) => toRow(c.runId, f, diff)));
 
@@ -435,6 +500,11 @@ async function runScanner(
     `${name}: ${rows.length} finding(s)${c.isPr ? `, ${inDiff} in this diff` : ""}`,
   );
   return { status: "ok", findings: rows.length, durationMs: Date.now() - t0 };
+}
+
+/** The file matches one of the repository's ignored path globs. */
+function isIgnored(c: RunContext, file: string | null): boolean {
+  return Boolean(file && c.ignorePaths.length && matchesPath(file, c.ignorePaths));
 }
 
 async function toRow(
@@ -483,7 +553,7 @@ type AgentStart = { ok: true; findingIds: string[] } | { ok: false; error: strin
 
 async function startAgent(
   env: Env,
-  sb: DurableObjectStub<ScanSandbox>,
+  sb: Box,
   c: RunContext,
   diffInfo: DiffInfo | null,
 ): Promise<AgentStart> {
@@ -499,13 +569,53 @@ async function startAgent(
     ),
   });
   if (!cred) {
-    const error = `No ${provider === "claude" ? "Claude" : "OpenAI"} credential configured. Add one in Settings → AI agents.`;
+    const error = `No ${AGENT_INFO[provider].label} credential configured. Add one in Settings → AI agents.`;
     await updateRun(db, c.runId, { aiError: error });
     await logRun(db, c.runId, "warn", error);
     return { ok: false, error };
   }
   if (!env.CREDENTIALS_KEY) throw new Error("CREDENTIALS_KEY is not set on the engine");
-  const secret = await openSecret(env.CREDENTIALS_KEY, { ciphertext: cred.ciphertext, iv: cred.iv }, cred.id);
+  // The sandbox must be up before anything is written to it (in hybrid mode
+  // this is the agent's first use of it).
+  await ensureRepo(env, sb, c);
+  const kind = cred.kind;
+  let egress: EgressPolicy;
+  /** Placeholders computed per run, added to the agent's environment. */
+  const agentEnv: Record<string, string> = {};
+  /** The stand-in for an API key or token, when the backend provides one. */
+  let keyStandIn: string | undefined;
+  if (kind === "codex_chatgpt_login") {
+    let login: CodexLogin;
+    try {
+      login = await usableCodexLogin(db, env.CREDENTIALS_KEY, cred);
+    } catch (err) {
+      if (!(err instanceof CodexLoginRejected)) throw err;
+      await updateRun(db, c.runId, { aiError: err.message });
+      await logRun(db, c.runId, "warn", err.message);
+      return { ok: false, error: err.message };
+    }
+    const standIn = await sb.credentialStandIn(kind, login.accessToken);
+    await sb.writeText(`${CODEX_HOME}/auth.json`, sandboxAuthFile(login, Date.now(), standIn ?? undefined));
+    egress = { phase: "agent", kind, secret: login.accessToken, accountId: login.accountId };
+  } else if (kind === "cursor_api_key") {
+    const apiKey = await openSecret(env.CREDENTIALS_KEY, { ciphertext: cred.ciphertext, iv: cred.iv }, cred.id);
+    let accessToken: string;
+    try {
+      accessToken = await cursorAccessToken(apiKey);
+    } catch (err) {
+      if (!(err instanceof CursorKeyRejected)) throw err;
+      await updateRun(db, c.runId, { aiError: err.message });
+      await logRun(db, c.runId, "warn", err.message);
+      return { ok: false, error: err.message };
+    }
+    const placeholder = (await sb.credentialStandIn(kind, accessToken)) ?? sandboxCursorToken(accessToken);
+    egress = { phase: "agent", kind, secret: accessToken, placeholder };
+    agentEnv.CURSOR_AUTH_TOKEN = placeholder;
+  } else {
+    const secret = await openSecret(env.CREDENTIALS_KEY, { ciphertext: cred.ciphertext, iv: cred.iv }, cred.id);
+    egress = { phase: "agent", kind, secret };
+    keyStandIn = (await sb.credentialStandIn(kind, secret)) ?? undefined;
+  }
 
   // Give the agent the scanner findings, most relevant first.
   const findings = await db.query.finding.findMany({
@@ -526,7 +636,6 @@ async function startAgent(
     description: f.description.slice(0, 1500),
   }));
 
-  await ensureRepo(env, sb, c);
   const diffText = c.isPr ? await (await env.ARTIFACTS.get(`runs/${c.runId}/pr.diff`))?.text() : null;
   await sb.writeText(DIFF_PATH, diffText ?? "(no pull request diff: manual branch review)\n");
   await sb.writeText(FINDINGS_PATH, JSON.stringify(findingsJson, null, 2));
@@ -544,15 +653,16 @@ async function startAgent(
       diffTruncated: diffInfo?.truncated ?? false,
       scannerFindingCount: findingsJson.length,
       instructions: c.instructions,
+      focus: c.focus,
+      ignorePaths: c.ignorePaths,
     }),
   );
 
-  const kind = cred.kind;
-  const inv = agentInvocation(provider, kind, c.agentModel);
+  const inv = agentInvocation(provider, kind, c.agentModel, keyStandIn);
   // From here until ai:collect the sandbox can reach ONLY the model API, and
   // the proxy (not the sandbox) holds the credential.
-  await sb.setEgress({ phase: "agent", kind, secret });
-  await sb.startTask(TASK_DIR, inv.argv, { cwd: WORK_DIR, env: inv.env });
+  await sb.setEgress(egress);
+  await sb.startTask(TASK_DIR, inv.argv, { cwd: WORK_DIR, env: { ...inv.env, ...agentEnv } });
   await db
     .update(schema.agentCredential)
     .set({ lastUsedAt: new Date() })
@@ -561,14 +671,14 @@ async function startAgent(
     db,
     c.runId,
     "info",
-    `AI review started with ${provider === "claude" ? "Claude Code" : "Codex"} (${CREDENTIAL_INFO[kind].label}), ${findingsJson.length} scanner finding(s) to triage`,
+    `AI review started with ${AGENT_INFO[provider].label} (${CREDENTIAL_INFO[kind].label}), ${findingsJson.length} scanner finding(s) to triage`,
   );
   return { ok: true, findingIds: ordered.map((f) => f.id) };
 }
 
 async function collectAgent(
   env: Env,
-  sb: DurableObjectStub<ScanSandbox>,
+  sb: Box,
   c: RunContext,
   started: AgentStart,
   outcome: { state: string; exitCode?: number },
@@ -627,7 +737,9 @@ async function collectAgent(
   await batchAll(db, updates);
 
   const diff = c.isPr ? await loadDiffMap(env, c.runId) : null;
-  const { kept, dropped: filtered } = filterAgentFindings(review.findings);
+  const { kept, dropped: filtered } = filterAgentFindings(
+    review.findings.filter((f) => !isIgnored(c, relPath(f.file))),
+  );
   const aiRows = await Promise.all(
     kept.map((f) => {
       const file = relPath(f.file);

@@ -13,20 +13,26 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known/$'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DocsIndexRouteImport } from './routes/docs.index'
 import { Route as DocsSlugRouteImport } from './routes/docs.$slug'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
+import { Route as ApiAuthSigninRouteImport } from './routes/api/auth/signin'
+import { Route as ApiAuthSignoutRouteImport } from './routes/api/auth/signout'
+import { Route as ApiGithubLinkRouteImport } from './routes/api/github/link'
 import { Route as ApiGithubSetupRouteImport } from './routes/api/github/setup'
 import { Route as ApiGithubWebhookRouteImport } from './routes/api/github/webhook'
 import { Route as DashboardRepositoriesIndexRouteImport } from './routes/dashboard.repositories.index'
 import { Route as DashboardRepositoriesIdRouteImport } from './routes/dashboard.repositories.$id'
 import { Route as DashboardRunsIndexRouteImport } from './routes/dashboard.runs.index'
 import { Route as DashboardRunsIdRouteImport } from './routes/dashboard.runs.$id'
+import { Route as ApiGithubLinkCallbackRouteImport } from './routes/api/github/link/callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -48,6 +54,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
@@ -61,6 +72,11 @@ const SigninRoute = SigninRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DotwellKnownSplatRoute = DotwellKnownSplatRouteImport.update({
+  id: '/.well-known/$',
+  path: '/.well-known/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
@@ -83,9 +99,24 @@ const DocsSlugRoute = DocsSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => DocsRoute,
 } as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
+const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
+  id: '/api/auth/callback',
+  path: '/api/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthSigninRoute = ApiAuthSigninRouteImport.update({
+  id: '/api/auth/signin',
+  path: '/api/auth/signin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthSignoutRoute = ApiAuthSignoutRouteImport.update({
+  id: '/api/auth/signout',
+  path: '/api/auth/signout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiGithubLinkRoute = ApiGithubLinkRouteImport.update({
+  id: '/api/github/link',
+  path: '/api/github/link',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiGithubSetupRoute = ApiGithubSetupRouteImport.update({
@@ -119,44 +150,61 @@ const DashboardRunsIdRoute = DashboardRunsIdRouteImport.update({
   path: '/runs/$id',
   getParentRoute: () => DashboardRoute,
 } as any)
+const ApiGithubLinkCallbackRoute = ApiGithubLinkCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => ApiGithubLinkRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/docs': typeof DocsRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
+  '/mcp': typeof McpRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/docs/': typeof DocsIndexRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
+  '/api/auth/signin': typeof ApiAuthSigninRoute
+  '/api/auth/signout': typeof ApiAuthSignoutRoute
+  '/api/github/link': typeof ApiGithubLinkRouteWithChildren
   '/api/github/setup': typeof ApiGithubSetupRoute
   '/api/github/webhook': typeof ApiGithubWebhookRoute
   '/dashboard/repositories/$id': typeof DashboardRepositoriesIdRoute
   '/dashboard/runs/$id': typeof DashboardRunsIdRoute
   '/dashboard/repositories/': typeof DashboardRepositoriesIndexRoute
   '/dashboard/runs/': typeof DashboardRunsIndexRoute
+  '/api/github/link/callback': typeof ApiGithubLinkCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/mcp': typeof McpRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/dashboard': typeof DashboardIndexRoute
   '/docs': typeof DocsIndexRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
+  '/api/auth/signin': typeof ApiAuthSigninRoute
+  '/api/auth/signout': typeof ApiAuthSignoutRoute
+  '/api/github/link': typeof ApiGithubLinkRouteWithChildren
   '/api/github/setup': typeof ApiGithubSetupRoute
   '/api/github/webhook': typeof ApiGithubWebhookRoute
   '/dashboard/repositories/$id': typeof DashboardRepositoriesIdRoute
   '/dashboard/runs/$id': typeof DashboardRunsIdRoute
   '/dashboard/repositories': typeof DashboardRepositoriesIndexRoute
   '/dashboard/runs': typeof DashboardRunsIndexRoute
+  '/api/github/link/callback': typeof ApiGithubLinkCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -164,20 +212,26 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/docs': typeof DocsRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
+  '/mcp': typeof McpRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signin': typeof SigninRoute
   '/signup': typeof SignupRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/docs/$slug': typeof DocsSlugRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/docs/': typeof DocsIndexRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
+  '/api/auth/signin': typeof ApiAuthSigninRoute
+  '/api/auth/signout': typeof ApiAuthSignoutRoute
+  '/api/github/link': typeof ApiGithubLinkRouteWithChildren
   '/api/github/setup': typeof ApiGithubSetupRoute
   '/api/github/webhook': typeof ApiGithubWebhookRoute
   '/dashboard/repositories/$id': typeof DashboardRepositoriesIdRoute
   '/dashboard/runs/$id': typeof DashboardRunsIdRoute
   '/dashboard/repositories/': typeof DashboardRepositoriesIndexRoute
   '/dashboard/runs/': typeof DashboardRunsIndexRoute
+  '/api/github/link/callback': typeof ApiGithubLinkCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -186,58 +240,76 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/docs'
     | '/forgot-password'
+    | '/mcp'
     | '/reset-password'
     | '/signin'
     | '/signup'
+    | '/.well-known/$'
     | '/dashboard/settings'
     | '/docs/$slug'
     | '/dashboard/'
     | '/docs/'
-    | '/api/auth/$'
+    | '/api/auth/callback'
+    | '/api/auth/signin'
+    | '/api/auth/signout'
+    | '/api/github/link'
     | '/api/github/setup'
     | '/api/github/webhook'
     | '/dashboard/repositories/$id'
     | '/dashboard/runs/$id'
     | '/dashboard/repositories/'
     | '/dashboard/runs/'
+    | '/api/github/link/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/forgot-password'
+    | '/mcp'
     | '/reset-password'
     | '/signin'
     | '/signup'
+    | '/.well-known/$'
     | '/dashboard/settings'
     | '/docs/$slug'
     | '/dashboard'
     | '/docs'
-    | '/api/auth/$'
+    | '/api/auth/callback'
+    | '/api/auth/signin'
+    | '/api/auth/signout'
+    | '/api/github/link'
     | '/api/github/setup'
     | '/api/github/webhook'
     | '/dashboard/repositories/$id'
     | '/dashboard/runs/$id'
     | '/dashboard/repositories'
     | '/dashboard/runs'
+    | '/api/github/link/callback'
   id:
     | '__root__'
     | '/'
     | '/dashboard'
     | '/docs'
     | '/forgot-password'
+    | '/mcp'
     | '/reset-password'
     | '/signin'
     | '/signup'
+    | '/.well-known/$'
     | '/dashboard/settings'
     | '/docs/$slug'
     | '/dashboard/'
     | '/docs/'
-    | '/api/auth/$'
+    | '/api/auth/callback'
+    | '/api/auth/signin'
+    | '/api/auth/signout'
+    | '/api/github/link'
     | '/api/github/setup'
     | '/api/github/webhook'
     | '/dashboard/repositories/$id'
     | '/dashboard/runs/$id'
     | '/dashboard/repositories/'
     | '/dashboard/runs/'
+    | '/api/github/link/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -245,10 +317,15 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRouteWithChildren
   DocsRoute: typeof DocsRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  McpRoute: typeof McpRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SigninRoute: typeof SigninRoute
   SignupRoute: typeof SignupRoute
-  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
+  ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
+  ApiAuthSigninRoute: typeof ApiAuthSigninRoute
+  ApiAuthSignoutRoute: typeof ApiAuthSignoutRoute
+  ApiGithubLinkRoute: typeof ApiGithubLinkRouteWithChildren
   ApiGithubSetupRoute: typeof ApiGithubSetupRoute
   ApiGithubWebhookRoute: typeof ApiGithubWebhookRoute
 }
@@ -283,6 +360,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reset-password': {
       id: '/reset-password'
       path: '/reset-password'
@@ -302,6 +386,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/$': {
+      id: '/.well-known/$'
+      path: '/.well-known/$'
+      fullPath: '/.well-known/$'
+      preLoaderRoute: typeof DotwellKnownSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/': {
@@ -332,11 +423,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSlugRouteImport
       parentRoute: typeof DocsRoute
     }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
+    '/api/auth/callback': {
+      id: '/api/auth/callback'
+      path: '/api/auth/callback'
+      fullPath: '/api/auth/callback'
+      preLoaderRoute: typeof ApiAuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/signin': {
+      id: '/api/auth/signin'
+      path: '/api/auth/signin'
+      fullPath: '/api/auth/signin'
+      preLoaderRoute: typeof ApiAuthSigninRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/signout': {
+      id: '/api/auth/signout'
+      path: '/api/auth/signout'
+      fullPath: '/api/auth/signout'
+      preLoaderRoute: typeof ApiAuthSignoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/github/link': {
+      id: '/api/github/link'
+      path: '/api/github/link'
+      fullPath: '/api/github/link'
+      preLoaderRoute: typeof ApiGithubLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/github/setup': {
@@ -381,6 +493,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRunsIdRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/api/github/link/callback': {
+      id: '/api/github/link/callback'
+      path: '/callback'
+      fullPath: '/api/github/link/callback'
+      preLoaderRoute: typeof ApiGithubLinkCallbackRouteImport
+      parentRoute: typeof ApiGithubLinkRoute
+    }
   }
 }
 
@@ -418,15 +537,32 @@ const DocsRouteChildren: DocsRouteChildren = {
 
 const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
 
+interface ApiGithubLinkRouteChildren {
+  ApiGithubLinkCallbackRoute: typeof ApiGithubLinkCallbackRoute
+}
+
+const ApiGithubLinkRouteChildren: ApiGithubLinkRouteChildren = {
+  ApiGithubLinkCallbackRoute: ApiGithubLinkCallbackRoute,
+}
+
+const ApiGithubLinkRouteWithChildren = ApiGithubLinkRoute._addFileChildren(
+  ApiGithubLinkRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRouteWithChildren,
   DocsRoute: DocsRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  McpRoute: McpRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SigninRoute: SigninRoute,
   SignupRoute: SignupRoute,
-  ApiAuthSplatRoute: ApiAuthSplatRoute,
+  DotwellKnownSplatRoute: DotwellKnownSplatRoute,
+  ApiAuthCallbackRoute: ApiAuthCallbackRoute,
+  ApiAuthSigninRoute: ApiAuthSigninRoute,
+  ApiAuthSignoutRoute: ApiAuthSignoutRoute,
+  ApiGithubLinkRoute: ApiGithubLinkRouteWithChildren,
   ApiGithubSetupRoute: ApiGithubSetupRoute,
   ApiGithubWebhookRoute: ApiGithubWebhookRoute,
 }

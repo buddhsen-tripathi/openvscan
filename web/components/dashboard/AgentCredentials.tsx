@@ -7,10 +7,12 @@ import {
   type CredentialKind,
 } from "@openvscan/core";
 import { type FormEvent, useState } from "react";
+import { AgentLogo } from "@/components/brand/AgentLogo";
 import { timeAgo } from "@/components/dashboard/RunList";
 import { Key, ShieldCheck, Spinner, Trash } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Input, Label } from "@/components/ui/Input";
+import { CopyButton } from "@/components/ui/CopyButton";
+import { Input, Label, Textarea } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import {
   useCredentialsQuery,
@@ -59,8 +61,8 @@ function ProviderCard({
   return (
     <Panel>
       <div className="flex items-start gap-4 px-5 py-4">
-        <span className="grid size-10 shrink-0 place-items-center rounded-[8px] border border-border bg-background font-mono text-[12px] text-foreground shadow-card">
-          {info.short}
+        <span className="grid size-10 shrink-0 place-items-center rounded-[8px] border border-transparent bg-background shadow-edge">
+          <AgentLogo agent={provider} className="size-5" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -134,35 +136,51 @@ function ProviderCard({
             <SegmentedControl
               label="Credential type"
               value={kind}
-              onChange={setKind}
+              onChange={(k) => {
+                setKind(k);
+                setSecret("");
+              }}
               options={kinds.map((k) => ({
                 value: k,
                 label: CREDENTIAL_INFO[k].label,
               }))}
             />
           )}
-          <div className="space-y-1.5">
-            <Label htmlFor={`secret-${provider}`}>Token</Label>
-            <Input
+          {CREDENTIAL_INFO[kind].file ? (
+            <ChatgptLoginFields
               id={`secret-${provider}`}
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
               value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              placeholder={`${CREDENTIAL_INFO[kind].prefix ?? ""}…`}
+              onChange={setSecret}
               disabled={disabled}
-              className="font-mono text-[13px]"
             />
-            <p className="text-[12.5px] text-muted-foreground">
-              {CREDENTIAL_INFO[kind].hint}
-            </p>
-          </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor={`secret-${provider}`}>Token</Label>
+              <Input
+                id={`secret-${provider}`}
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                placeholder={`${CREDENTIAL_INFO[kind].prefix ?? ""}…`}
+                disabled={disabled}
+                className="font-mono text-[13px]"
+              />
+              <p className="text-[12.5px] text-muted-foreground">
+                <WithCode text={CREDENTIAL_INFO[kind].hint} />
+              </p>
+            </div>
+          )}
           {save.error && (
             <Notice tone="danger">
-              {save.error instanceof Error
-                ? save.error.message
-                : "Failed to save"}
+              <WithCode
+                text={
+                  save.error instanceof Error
+                    ? save.error.message
+                    : "Failed to save"
+                }
+              />
             </Notice>
           )}
           <div className="flex gap-2">
@@ -186,6 +204,83 @@ function ProviderCard({
         </form>
       )}
     </Panel>
+  );
+}
+
+/** Renders `backtick` spans in a hint as inline code. */
+function WithCode({ text }: { text: string }) {
+  return text.split(/(`[^`]+`)/).map((part, i) =>
+    part.startsWith("`") ? (
+      <code key={i} className={INLINE_CODE}>
+        {part.slice(1, -1)}
+      </code>
+    ) : (
+      part
+    ),
+  );
+}
+
+const INLINE_CODE =
+  "rounded-[4px] bg-muted px-1 font-mono text-[12px] text-foreground";
+
+const CODEX_LOGIN_STEPS = `export CODEX_HOME="$(mktemp -d)"
+codex login --device-auth
+cat "$CODEX_HOME/auth.json"`;
+
+/**
+ * Codex keeps a ChatGPT login in auth.json. A separate CODEX_HOME gives
+ * OpenVScan its own login: refresh tokens are single-use, so sharing the
+ * laptop's file would sign one of them out at the next refresh.
+ */
+function ChatgptLoginFields({
+  id,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <p className="text-[13px] text-foreground">
+          Sign in once in a fresh Codex home, so OpenVScan gets its own login
+          and your laptop stays signed in:
+        </p>
+        <div className="relative rounded-[8px] border border-border bg-muted/50">
+          <pre className="overflow-x-auto px-3.5 py-3 pr-10 font-mono text-[12.5px] leading-relaxed text-foreground">
+            {CODEX_LOGIN_STEPS}
+          </pre>
+          <CopyButton
+            label="Copy commands"
+            getText={() => CODEX_LOGIN_STEPS}
+            className="absolute top-2 right-2 grid size-7 place-items-center rounded-[6px] text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={id}>auth.json</Label>
+        <Textarea
+          id={id}
+          rows={5}
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder='{ "auth_mode": "chatgpt", "tokens": { … } }'
+          disabled={disabled}
+          className="font-mono text-[12.5px] [-webkit-text-security:disc]"
+        />
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          OpenVScan keeps only the tokens and refreshes them itself; the sandbox
+          never sees them. Reviews count against your plan's Codex limits.
+          OpenAI recommends an API key for automation on public repositories.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -217,11 +312,9 @@ export function AgentCredentials() {
           Tokens are encrypted at rest (AES-256-GCM) and never sent back to your
           browser. During a review the agent only sees a placeholder; the real
           token is swapped in at the sandbox's network egress, on requests to
-          the model API. For Claude, run{" "}
-          <code className="rounded-[4px] bg-muted px-1 font-mono text-[12px] text-foreground">
-            claude setup-token
-          </code>{" "}
-          to create a long-lived subscription token.
+          the model API. Subscriptions work: a Claude token from{" "}
+          <code className={INLINE_CODE}>claude setup-token</code>, a ChatGPT
+          login for Codex or a Cursor API key.
         </span>
       </div>
     </div>

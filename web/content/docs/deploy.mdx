@@ -3,7 +3,7 @@ title: Deploy to Cloudflare
 description: Provision D1 and R2, set secrets, deploy the engine and web Workers, and run a test review.
 ---
 
-This page takes you from a fresh clone to a working deployment. You need the GitHub App values from [Register a GitHub App](/docs/github-app), Docker running locally, and a Cloudflare account on the Workers Paid plan.
+This page takes you from a fresh clone to a working deployment. You need the GitHub App values from [Register a GitHub App](/docs/github-app), a [WorkOS](https://workos.com) account for sign-in, Docker running locally, and a Cloudflare account on the Workers Paid plan.
 
 All commands run from the repository root. Wrangler is a dev dependency of both Workers, so the commands call it through `pnpm --filter <worker> exec wrangler`. The examples use `https://openvscan.example.com` as the web origin.
 
@@ -40,6 +40,18 @@ pnpm --filter openvscan-web exec wrangler r2 bucket create openvscan-artifacts
 Keep these names. The `db:migrate` scripts in `package.json` apply migrations to a database named `openvscan`, and both `wrangler.jsonc` files bind the bucket `openvscan-artifacts`.
 
 </Step>
+<Step title="Set up WorkOS AuthKit">
+
+OpenVScan's own sign-in pages call WorkOS's user management API. WorkOS keeps the passwords and sends the verification and password reset emails. In the WorkOS dashboard, pick the environment for this deployment (production for a live deployment) and:
+
+1. Add `https://openvscan.example.com/api/auth/callback` as a redirect URI.
+2. Set the default **Sign-out URI** to `https://openvscan.example.com/`.
+3. Enable **Email + Password**. WorkOS emails a one-time code the first time an unverified address signs in, with a password or with GitHub.
+4. Set the **Password reset URL** to `https://openvscan.example.com/reset-password` and the **Initiate login URI** to `https://openvscan.example.com/signin`.
+5. Optional: enable GitHub sign-in with this deployment's GitHub App client ID and secret, and turn on returning GitHub OAuth tokens. See [Link GitHub at sign-in](/docs/github-app#link-github-at-sign-in).
+6. Copy the environment's client ID (`client_...`), its API key (`sk_...`) and, if you want the [MCP server](/docs/mcp), its AuthKit domain.
+
+</Step>
 <Step title="Edit both wrangler.jsonc files">
 
 Put your `database_id` in the `d1_databases` entry of **both** `web/wrangler.jsonc` and `engine/wrangler.jsonc`. The values in the repository belong to the maintainers' account.
@@ -60,9 +72,11 @@ Then set the variables to your web origin. In `web/wrangler.jsonc`:
 ```jsonc
 "vars": {
   "VITE_APP_URL": "https://openvscan.example.com",
-  "BETTER_AUTH_URL": "https://openvscan.example.com"
+  "WORKOS_AUTHKIT_DOMAIN": "your-app.authkit.app"
 }
 ```
+
+Leave `WORKOS_AUTHKIT_DOMAIN` empty to keep the MCP server off.
 
 In `engine/wrangler.jsonc`:
 
@@ -74,7 +88,7 @@ In `engine/wrangler.jsonc`:
 }
 ```
 
-`BETTER_AUTH_URL` must be the exact origin users open in the browser. Better Auth trusts only that origin and rejects sign-in requests from any other. `APP_URL` is used for the "details" links the engine posts on GitHub. See [Configuration](/docs/configuration) for every variable.
+`VITE_APP_URL` must be the exact origin users open in the browser. The sign-in redirect URI is built from it, and WorkOS accepts only the redirect URIs you registered. `APP_URL` is used for the "details" links the engine posts on GitHub. See [Configuration](/docs/configuration) for every variable.
 
 </Step>
 <Step title="Apply the database migrations">
@@ -88,11 +102,10 @@ This runs `wrangler d1 migrations apply openvscan --remote` with the web Worker'
 </Step>
 <Step title="Generate keys and write the secret files">
 
-Generate the two random keys:
+Generate the encryption key:
 
 ```bash
 openssl rand -base64 32   # CREDENTIALS_KEY, the same value for both Workers
-openssl rand -base64 32   # BETTER_AUTH_SECRET
 ```
 
 Convert the App's private key to a single line with escaped newlines:
@@ -114,7 +127,8 @@ CREDENTIALS_KEY=<same value as in web.env>
 `~/openvscan-secrets/web.env`:
 
 ```ini
-BETTER_AUTH_SECRET=<random value>
+WORKOS_CLIENT_ID=client_...
+WORKOS_API_KEY=sk_...
 CREDENTIALS_KEY=<same value as in engine.env>
 GITHUB_APP_ID=123456
 GITHUB_APP_SLUG=openvscan-acme
@@ -131,7 +145,8 @@ Which secret goes where:
 | `CREDENTIALS_KEY` | Yes | Yes | `openssl rand -base64 32`. Must be identical in both Workers. |
 | `GITHUB_APP_ID` | Yes | Yes | App settings, **About** section |
 | `GITHUB_APP_PRIVATE_KEY` | Yes | Yes | The `.pem` you generated on the App |
-| `BETTER_AUTH_SECRET` | Yes | No | `openssl rand -base64 32` |
+| `WORKOS_CLIENT_ID` | Yes | No | WorkOS dashboard, **API Keys** (client ID) |
+| `WORKOS_API_KEY` | Yes | No | WorkOS dashboard, **API Keys** |
 | `GITHUB_APP_SLUG` | Yes | No | The App's public URL, `https://github.com/apps/<slug>` |
 | `GITHUB_WEBHOOK_SECRET` | Yes | No | The value you entered on the App |
 | `GITHUB_CLIENT_ID` | Yes | No | App settings, **About** section |
@@ -141,7 +156,7 @@ Dotenv values expand `$VAR`. If a value contains a literal `$`, escape it as `\$
 
 <Callout type="warning" title="CREDENTIALS_KEY must match">
 
-The web Worker encrypts agent credentials with `CREDENTIALS_KEY` and the engine decrypts them when a review starts. If the two values differ, every AI review fails.
+The web Worker encrypts agent credentials with `CREDENTIALS_KEY` and the engine decrypts them when a review starts. If the two values differ, every AI review fails. The web Worker also seals session cookies with it.
 
 </Callout>
 
@@ -196,11 +211,12 @@ The engine does not need a domain. The web Worker reaches it over the service bi
 
    It returns `{"ok":true}`.
 
-2. Open your web origin and choose **Continue with GitHub**.
-3. In the dashboard, open **Repositories** and install the GitHub App on one or more repositories. GitHub sends you back through `/api/github/setup` to the repositories page.
-4. Connect a repository.
-5. Optional: in **Settings → AI agents**, save a Claude or OpenAI credential and choose an agent in the repository's settings. See [Agent credentials](/docs/agent-credentials).
-6. Open a pull request on the connected repository. The **OpenVScan Security Review** check appears on the PR, and the review appears under **Reviews** in the dashboard.
+2. Open your web origin and choose **Sign in**, then **Create one**. Enter the code WorkOS emails you, and you land on the dashboard.
+3. If you did not sign in with GitHub, open **Settings → GitHub account** and choose **Link GitHub**.
+4. In the dashboard, open **Repositories** and install the GitHub App on one or more repositories. GitHub sends you back through `/api/github/setup` to the repositories page.
+5. Connect a repository.
+6. Optional: in **Settings → AI agents**, save a Claude or OpenAI credential and choose an agent in the repository's settings. See [Agent credentials](/docs/agent-credentials).
+7. Open a pull request on the connected repository. The **OpenVScan Security Review** check appears on the PR, and the review appears under **Reviews** in the dashboard.
 
 On GitHub, the App's **Advanced** tab lists recent webhook deliveries and their response codes. Successful deliveries return `200`.
 
@@ -241,8 +257,13 @@ The web Worker's `deploy` script runs the build first. Always deploy the engine 
 |---------|-------|
 | Webhook deliveries return `401` with `webhook not configured` | `GITHUB_WEBHOOK_SECRET` is not set on the web Worker. |
 | Webhook deliveries return `401` with `invalid signature` | `GITHUB_WEBHOOK_SECRET` does not match the secret on the App. |
-| Sign-in fails with an origin error | `BETTER_AUTH_URL` does not match the origin in the browser. Check the scheme, host and port. |
-| "Link your GitHub account in Settings → Sign-in methods…" | The user has no linked GitHub account, or its token can't be refreshed. Link GitHub in Settings, then install again. |
+| `/api/auth/signin` returns `503` "Sign-in is not configured" | `WORKOS_CLIENT_ID` or `WORKOS_API_KEY` is not set on the web Worker. |
+| WorkOS shows an invalid redirect URI error | `<origin>/api/auth/callback` is not a redirect URI in the WorkOS environment, or `VITE_APP_URL` does not match the origin in the browser. Check the scheme, host and port. |
+| GitHub sign-in returns to `/signin` with `?error=` | `state`: the sign-in took longer than ten minutes or cookies are blocked. `github`: WorkOS or GitHub refused the sign-in; the web Worker logs the reason. A common cause is a GitHub App without the **Email addresses: Read-only** account permission. `signin_failed`: WorkOS refused the code, usually because `WORKOS_API_KEY` belongs to a different environment from `WORKOS_CLIENT_ID`. |
+| The password reset email links to an AuthKit page | The WorkOS environment's **Password reset URL** is not set to `<origin>/reset-password`. |
+| Sign-in says "Too many attempts" | The rate limit was reached: 5 attempts a minute per email, 20 per IP. Wait a minute. |
+| "Link your GitHub account in Settings…" when installing the App | The user has no linked GitHub account, or its token can't be refreshed. Link GitHub in **Settings → GitHub account**, then install again. |
+| Linking GitHub fails with a redirect URI error on GitHub | `<origin>/api/github/link/callback` is not one of the App's callback URLs. |
 | "Only the account owner or an organization admin can connect this installation." | The user isn't the personal account the App was installed on, or isn't an admin of the organization. For organizations, also check the App has the **Members: read** organization permission and that `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` are this App's own OAuth credentials. |
 | "This installation is already connected to another OpenVScan account." | Another user connected it first. They can disconnect it, or uninstall and reinstall the App. |
 | "ENGINE service binding is missing" | The engine is not deployed, or the web Worker was deployed before it. Deploy the engine, then the web Worker. |

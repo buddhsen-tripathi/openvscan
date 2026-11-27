@@ -5,7 +5,7 @@ description: Short answers to common questions about OpenVScan's behaviour, cost
 
 Short answers, with links to the page that has the detail.
 
-## Do I need Claude Code or Codex?
+## Do I need Claude Code, Codex or Cursor?
 
 No. With **AI reviewer** set to **None**, OpenVScan runs Trivy, Opengrep and Gitleaks and publishes their findings. The agent adds triage of those findings and a review of the changed code. See [AI review](/docs/ai-review).
 
@@ -13,7 +13,7 @@ No. With **AI reviewer** set to **None**, OpenVScan runs Trivy, Opengrep and Git
 
 The AI step runs on your own credential. Anthropic or OpenAI bill you for API key usage, and a Claude subscription token counts against your Claude plan.
 
-Self-hosting needs the Cloudflare Workers Paid plan for Containers, plus whatever Cloudflare usage your reviews generate. See [Self-hosting](/docs/self-hosting).
+Self-hosting needs the Cloudflare Workers Paid plan for Containers, plus whatever Cloudflare usage your reviews generate. You can run the sandboxes on your own Daytona account instead and pay Daytona for them. See [Self-hosting](/docs/self-hosting) and [Run sandboxes on Daytona](/docs/daytona).
 
 ## Whose credential pays for a review?
 
@@ -33,7 +33,7 @@ It depends on the scanner. Trivy covers the dependency manifests, lockfiles and 
 
 ## What data leaves the sandbox?
 
-During checkout, a git fetch from GitHub. During the Trivy step, a database download from Trivy's mirrors. During the AI review, requests to `api.anthropic.com` or `api.openai.com`, which carry whatever code and findings the agent reads. Nothing else can leave. Results are posted to GitHub by the engine, outside the sandbox. See [Security model](/docs/security-model).
+During checkout, a git fetch from GitHub. During the Trivy step, a database download from Trivy's mirrors. During the AI review, requests to the model API (`api.anthropic.com`, `api.openai.com`, the Codex backend on `chatgpt.com`, or `*.cursor.sh`), which carry whatever code and findings the agent reads. Nothing else can leave. Results are posted to GitHub by the engine, outside the sandbox. See [Security model](/docs/security-model).
 
 ## Will it block my merge?
 
@@ -67,6 +67,14 @@ Yes. Use **Review a branch** on the repository's page in the dashboard. It scans
 
 No. A repository can be connected to one account at a time. Connecting it from a second account fails with "This repository is already connected by another account".
 
+## Why do I have to link GitHub?
+
+When you install the GitHub App, OpenVScan checks with GitHub that you are the account it was installed on or an admin of the organization, before it connects the installation to you. It needs a linked GitHub account for that check. Signing in with GitHub links it automatically. Otherwise, link it under **Settings → GitHub account**. See [Linking GitHub](/docs/github-app#linking-github).
+
+## Can my coding agent use OpenVScan?
+
+Yes. Connect Claude Code, Codex or Cursor to the MCP server at `https://openvscan.com/mcp`. The agent can read reviews and their findings, start and re-run reviews, and change repository settings, all as you. See [MCP server](/docs/mcp).
+
 ## How do I stop reviewing a repository?
 
-Turn off **Review pull requests** to keep the repository connected but review only on demand. Click **Disconnect** to remove it from OpenVScan entirely. To revoke the App's access, change the installation on GitHub. See [Repository settings](/docs/repository-settings#disconnect-a-repository).
+Set **Review pull requests** to **Only on request** to keep the repository connected but review only on demand. Click **Disconnect** to remove it from OpenVScan entirely. To revoke the App's access, change the installation on GitHub. See [Repository settings](/docs/repository-settings#disconnect-a-repository).

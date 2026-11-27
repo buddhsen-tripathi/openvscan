@@ -8,9 +8,9 @@ import remarkGfm from "remark-gfm";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  // Pin the dev server to 3000 so the browser origin matches BETTER_AUTH_URL
-  // (http://localhost:3000). Otherwise Better-auth rejects sign-in/sign-up with
-  // INVALID_ORIGIN because the request Origin (Vite's default :5173) isn't trusted.
+  // Pin the dev server to 3000 so the sign-in redirect URI built from the
+  // browser origin, http://localhost:3000/api/auth/callback, matches the one
+  // registered in WorkOS (Vite's default :5173 would be rejected).
   server: { port: 3000 },
   plugins: [
     cloudflare({ viteEnvironment: { name: "ssr" } }),

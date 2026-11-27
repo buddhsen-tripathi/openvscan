@@ -50,6 +50,8 @@ export async function createAndStartRun(
     agentModel: input.repo.agentModel,
     failOn: input.repo.failOn,
     instructions: input.repo.instructions,
+    focus: input.repo.focus,
+    ignorePaths: input.repo.ignorePaths,
   });
 
   try {
