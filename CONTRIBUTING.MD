@@ -21,15 +21,15 @@ This project adheres to a Code of Conduct that all contributors are expected to 
 
 ## Getting Started
 
-OpenVScan runs entirely on Cloudflare (Workers, Containers, D1, R2, Queues). See [AGENTS.MD](AGENTS.MD) for an architecture overview.
+OpenVScan runs entirely on Cloudflare (Workers, Workflows, Containers, D1, R2). See [AGENTS.MD](AGENTS.MD) for an architecture overview.
 
 ### Prerequisites
 
 - **Node.js** (v22.12 or higher)
 - **pnpm** (v8 or higher) — install with `npm install -g pnpm`
 - **Git**
-- A **Cloudflare account** (the Workers Paid plan is required only for the scanner container)
-- **Docker** — only needed to build/run the scanner container locally
+- A **Cloudflare account** (the Workers Paid plan is required for the review container)
+- **Docker** — needed to build/run the engine's container locally
 
 ### Fork and Clone
 
@@ -63,20 +63,15 @@ pnpm install
 pnpm --filter openvscan-web exec wrangler login
 pnpm --filter openvscan-web exec wrangler d1 create openvscan
 pnpm --filter openvscan-web exec wrangler r2 bucket create openvscan-artifacts
-pnpm --filter openvscan-web exec wrangler queues create openvscan-scans
 ```
 
-Copy the printed D1 `database_id` into `web/wrangler.jsonc` and `workers/wrangler.jsonc`.
+Copy the printed D1 `database_id` into `web/wrangler.jsonc` and `engine/wrangler.jsonc`.
 
 ### 3. Local Secrets
 
-Bindings live in `wrangler.jsonc`. Provide secrets for local dev in `web/.dev.vars`:
-
-```env
-BETTER_AUTH_SECRET=your-32-char-secret
-BETTER_AUTH_URL=http://localhost:3000
-VITE_APP_URL=http://localhost:3000
-```
+Bindings live in `wrangler.jsonc`. Copy `web/.dev.vars.example` → `web/.dev.vars`
+and `engine/.dev.vars.example` → `engine/.dev.vars`, then fill them in. Use the
+**same** `CREDENTIALS_KEY` (`openssl rand -base64 32`) in both files.
 
 ### 4. Apply the Schema and Start
 
@@ -85,10 +80,12 @@ pnpm db:migrate:local   # apply migrations to local D1
 pnpm dev:web            # web Worker at http://localhost:3000
 ```
 
-To run scan execution locally, start the scanner Worker in another terminal (requires Docker):
+To run reviews locally, start the engine in another terminal (requires Docker). It
+shares the web app's local D1/R2 state:
 
 ```bash
-pnpm --filter openvscan-workers dev
+pnpm dev:engine                                   # or, with the /__dev smoke routes:
+pnpm --filter openvscan-engine exec wrangler dev --persist-to ../web/.wrangler/state --var DEV_ROUTES:true
 ```
 
 ## Project Structure
@@ -96,16 +93,18 @@ pnpm --filter openvscan-workers dev
 ```
 openvscan/
 ├── web/              # TanStack Start app on Cloudflare Workers
-│   ├── src/routes/   # routes incl. api/auth/$ and api/scans.$id.export
-│   ├── components/   # auth/, dashboard/, homepage/, ui/
-│   ├── lib/          # auth.ts, db.ts, server.ts (server functions), api.ts
+│   ├── src/routes/   # dashboard routes, api/auth/$, api/github/{webhook,setup}
+│   ├── components/   # auth/, dashboard/, landing/, ui/
+│   ├── lib/          # auth, db, server fns (server.ts, github-server.ts), runs.ts, engine.ts
 │   └── wrangler.jsonc
-├── workers/          # Cloudflare consumer Worker (openvscan-scanner)
-│   ├── src/index.ts  # ScannerContainer + queue() handler
-│   └── container/    # Dockerfile (node + Trivy) + server.mjs
+├── engine/           # openvscan-engine: EngineApi RPC, ReviewWorkflow, ScanSandbox, Outbound
+│   ├── src/          # workflow, sandbox, egress policy, scanners/, diff, report, agent
+│   ├── container/    # Dockerfile (Trivy, Opengrep, Gitleaks, Claude Code, Codex) + task scripts
+│   └── test/         # vitest + real scanner output fixtures
 ├── packages/
+│   ├── core/         # enums, severity, agent review schema, credential crypto, EngineRpc
 │   ├── db/           # Drizzle SQLite schema for D1 + migrations
-│   └── types/        # Shared TypeScript types & enums
+│   └── github/       # GitHub App helpers (checks, reviews, comments)
 └── package.json      # Root scripts
 ```
 
@@ -171,11 +170,13 @@ git rebase upstream/main
 - Style with **Tailwind CSS** using the **semantic tokens** in `src/styles.css` (`bg-card`, `text-primary`, severity/status tokens) — never hardcode colors
 - Build reusable components in `web/components`; type props with interfaces
 
-### Scanner Worker (`workers/`)
+### Engine (`engine/`)
 
-- The Worker uses **raw D1 prepared statements** (no ORM) — keep it lean
-- Note Drizzle stores `integer({ mode: "timestamp" })` as epoch **seconds**; raw writes must match
-- The **container is stateless** — it only runs scanners and returns output; all D1/R2 writes happen in the Worker
+- Pipeline steps in `workflow.ts` are retried and replayed — keep them **idempotent**
+- The container has **no internet**; every new outbound need gets an explicit, phase-scoped rule in `outbound.ts`
+- **Never pass secrets into the container** (env, files or DO storage); `Outbound` injects them per request
+- Everything posted to GitHub goes through `sanitize()` in `report.ts`
+- Scanner parsers are pure functions — add a fixture from real output under `test/fixtures` when you change one
 
 ### Code Formatting
 
@@ -189,14 +190,13 @@ Run `wrangler types` after changing `wrangler.jsonc` bindings to refresh generat
 
 ## Testing
 
-There is **no automated test suite yet** — contributions here are especially welcome. Until then, verify changes by:
-
 ```bash
-pnpm build                          # web Worker builds cleanly (vite + tsc)
-pnpm --filter openvscan-workers typecheck
+pnpm typecheck   # every package
+pnpm test        # engine unit tests: scanner parsers, diff mapping, report, crypto
+pnpm build       # web Worker builds cleanly (vite + tsc)
 ```
 
-When adding tests, prefer [`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/) so they run against the Workers runtime with real bindings. Write meaningful tests for business logic and critical user flows, with descriptive names.
+For workflow-level tests, prefer [`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/) so they run against the Workers runtime with real bindings. Write meaningful tests for business logic and critical user flows, with descriptive names.
 
 ## Submitting Changes
 
@@ -205,8 +205,9 @@ When adding tests, prefer [`@cloudflare/vitest-pool-workers`](https://developers
 1. **Verify locally**:
 
 ```bash
+pnpm typecheck
+pnpm test
 pnpm build
-pnpm --filter openvscan-workers typecheck
 ```
 
 2. **Update documentation** if you've changed behavior or added features
