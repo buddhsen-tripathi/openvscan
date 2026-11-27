@@ -15,6 +15,27 @@
       "when": 1781098381773,
       "tag": "0001_dear_random",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795758356721,
+      "tag": "0002_pr_review_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795768305901,
+      "tag": "0003_accounts_and_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1795771111140,
+      "tag": "0004_inline_comment_flag",
+      "breakpoints": true
     }
   ]
 }

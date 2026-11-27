@@ -44,3 +44,6 @@ coverage/
 # Cloudflare local secrets
 .dev.vars
 *.dev.vars
+
+# Wrangler local state
+.wrangler/

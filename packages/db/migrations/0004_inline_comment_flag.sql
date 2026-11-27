@@ -1,0 +1,1 @@
+ALTER TABLE `finding` ADD `commented` integer DEFAULT false NOT NULL;
