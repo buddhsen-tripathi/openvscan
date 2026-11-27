@@ -1,14 +1,21 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useState } from "react";
 import Link from "@/components/AppLink";
-import { AuthShell, PasswordField } from "@/components/auth/AuthShell";
+import {
+  AuthShell,
+  errorText,
+  PasswordField,
+} from "@/components/auth/AuthShell";
 import { Notice } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/Input";
-import { resetPassword } from "@/lib/auth-client";
+import { resetPassword } from "@/lib/auth-server";
 import { isSignedIn } from "@/src/lib/session";
 
+/** WorkOS's reset email links here as `?token=` (the Password reset URL). */
 export const Route = createFileRoute("/reset-password")({
+  validateSearch: (search: Record<string, unknown>): { token?: string } =>
+    typeof search.token === "string" ? { token: search.token } : {},
   // Already signed in? Send them to the dashboard rather than the reset form.
   beforeLoad: async () => {
     if (await isSignedIn()) {
@@ -31,36 +38,24 @@ function InvalidLink({ title, message }: { title: string; message: string }) {
 }
 
 function ResetPasswordContent() {
+  const { token } = Route.useSearch();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [invalid, setInvalid] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const navigate = useNavigate();
-  const search = Route.useSearch() as { token?: string; error?: string };
-  const token = search.token;
 
-  useEffect(() => {
-    if (!success) return;
-    const t = setTimeout(() => navigate({ to: "/signin" }), 2000);
-    return () => clearTimeout(t);
-  }, [success, navigate]);
-
-  if (search.error === "INVALID_TOKEN") {
-    return (
-      <InvalidLink
-        title="Invalid or expired link"
-        message="This password reset link is invalid or has expired. Please request a new one."
-      />
-    );
+  if (invalid) {
+    return <InvalidLink title="Invalid or expired link" message={invalid} />;
   }
 
   if (!token) {
     return (
       <InvalidLink
         title="Missing token"
-        message="No reset token found. Please check your email link."
+        message="No reset token found. Open the link from your email again, or request a new one."
       />
     );
   }
@@ -68,7 +63,6 @@ function ResetPasswordContent() {
   return (
     <form
       className="space-y-4"
-      autoComplete="off"
       onSubmit={async (e) => {
         e.preventDefault();
         if (password !== confirmPassword) {
@@ -77,40 +71,34 @@ function ResetPasswordContent() {
         }
         setLoading(true);
         setError(null);
-        setSuccess(false);
         try {
-          await resetPassword({
-            newPassword: password,
-            token,
-            fetchOptions: {
-              onSuccess: () => {
-                setLoading(false);
-                setSuccess(true);
-              },
-              onError: (ctx) => {
-                setLoading(false);
-                setError(ctx.error.message);
-              },
-            },
-          });
-        } catch {
-          setLoading(false);
-          setError("An unexpected error occurred.");
+          const r = await resetPassword({ data: { token, password } });
+          if (r.ok) {
+            setSuccess(true);
+            window.location.href = r.redirect;
+            return;
+          }
+          if ("invalidLink" in r) setInvalid(r.error);
+          else if ("verify" in r) window.location.href = "/signin?reset=1";
+          else setError(r.error);
+        } catch (err) {
+          setError(errorText(err));
         }
+        setLoading(false);
       }}
     >
       {error && <Notice tone="danger">{error}</Notice>}
       {success && (
-        <Notice tone="success">
-          Password reset successfully! Redirecting…
-        </Notice>
+        <Notice tone="success">Password changed. Signing you in…</Notice>
       )}
 
       <Field label="New password" htmlFor="password">
         <PasswordField
           id="password"
           required
-          placeholder="At least 8 characters"
+          minLength={10}
+          autoComplete="new-password"
+          placeholder="At least 10 characters"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           show={showPassword}
@@ -122,6 +110,7 @@ function ResetPasswordContent() {
         <PasswordField
           id="confirm"
           required
+          autoComplete="new-password"
           placeholder="Re-enter your password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}

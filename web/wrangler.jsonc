@@ -9,11 +9,27 @@
   },
   "vars": {
     "VITE_APP_URL": "https://openvscan.com",
-    "BETTER_AUTH_URL": "https://openvscan.com",
-    "EMAIL_FROM": "no-reply@openvscan.com"
+    // WorkOS AuthKit (sign-in): WORKOS_CLIENT_ID and WORKOS_API_KEY are
+    // secrets (`wrangler secret put`). AuthKit domain for the MCP server's
+    // OAuth; empty turns /mcp off.
+    "WORKOS_AUTHKIT_DOMAIN": "committed-intention-27.authkit.app"
   },
-  // Verification and password-reset email (Cloudflare Email Service).
-  "send_email": [{ "name": "EMAIL" }],
+  // Brute-force limits for the sign-in, sign-up, code and password reset
+  // forms (WorkOS's password API has no lockout of its own). Keys are the
+  // client IP and the email address. `namespace_id` is any number unique to
+  // your Cloudflare account.
+  "ratelimits": [
+    {
+      "name": "AUTH_IP_LIMITER",
+      "namespace_id": "4201",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "AUTH_EMAIL_LIMITER",
+      "namespace_id": "4202",
+      "simple": { "limit": 5, "period": 60 }
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",

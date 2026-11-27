@@ -1,15 +1,17 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   AuthShell,
+  errorText,
   GithubAuthButton,
   oauthErrorMessage,
   PasswordField,
+  VerifyEmailForm,
 } from "@/components/auth/AuthShell";
 import { Notice } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/Input";
-import { signUp } from "@/lib/auth-client";
+import { signUpWithPassword } from "@/lib/auth-server";
 import { isSignedIn, safeRedirect } from "@/src/lib/session";
 
 export const Route = createFileRoute("/signup")({
@@ -30,15 +32,26 @@ export const Route = createFileRoute("/signup")({
 
 function SignUpPage() {
   const search = Route.useSearch();
-  const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(() =>
     oauthErrorMessage(search.error),
   );
-  const navigate = useNavigate();
+
+  if (verifying) {
+    return (
+      <AuthShell
+        title="Check your email"
+        subtitle={`We sent a 6-digit code to ${verifying}. Enter it to finish creating your account.`}
+      >
+        <VerifyEmailForm onBack={() => setVerifying(null)} />
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell
@@ -46,7 +59,9 @@ function SignUpPage() {
       subtitle="Start finding vulnerabilities before they ship."
       footer={{
         prompt: "Already have an account?",
-        href: "/signin",
+        href: search.redirect
+          ? `/signin?redirect=${encodeURIComponent(search.redirect)}`
+          : "/signin",
         label: "Sign in",
       }}
     >
@@ -57,28 +72,24 @@ function SignUpPage() {
 
       <form
         className="mt-4 space-y-4"
-        autoComplete="off"
         onSubmit={async (e) => {
           e.preventDefault();
           setLoading(true);
           setError(null);
-          await signUp.email({
-            email,
-            password,
-            name: username,
-            callbackURL: "/dashboard",
-            fetchOptions: {
-              onSuccess: () => {
-                setLoading(false);
-                if (search.redirect) window.location.href = search.redirect;
-                else navigate({ to: "/dashboard" });
-              },
-              onError: (ctx) => {
-                setLoading(false);
-                setError(ctx.error.message);
-              },
-            },
-          });
+          try {
+            const r = await signUpWithPassword({
+              data: { name, email, password, redirect: search.redirect },
+            });
+            if (r.ok) {
+              window.location.href = r.redirect;
+              return;
+            }
+            if ("verify" in r) setVerifying(r.email);
+            else setError(r.error);
+          } catch (err) {
+            setError(errorText(err));
+          }
+          setLoading(false);
         }}
       >
         {error && <Notice tone="danger">{error}</Notice>}
@@ -88,10 +99,11 @@ function SignUpPage() {
             id="name"
             type="text"
             required
+            autoComplete="name"
             placeholder="Ada Lovelace"
             className="h-10"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
         </Field>
 
@@ -100,6 +112,7 @@ function SignUpPage() {
             id="email"
             type="email"
             required
+            autoComplete="email"
             placeholder="you@company.com"
             className="h-10"
             value={email}
@@ -111,7 +124,9 @@ function SignUpPage() {
           <PasswordField
             id="password"
             required
-            placeholder="At least 8 characters"
+            minLength={10}
+            autoComplete="new-password"
+            placeholder="At least 10 characters"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             show={showPassword}

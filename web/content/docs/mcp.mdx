@@ -1,0 +1,143 @@
+---
+title: Use OpenVScan from your coding agent
+description: Connect Claude Code, Codex or Cursor to OpenVScan's MCP server to read reviews, start and re-run them, and change repository settings.
+---
+
+OpenVScan runs a remote [MCP](https://modelcontextprotocol.io) server. Connect your coding agent to it and the agent can list your repositories and reviews, read a review's findings with their fixes, start or re-run a review, and change a repository's review policy. A typical use is asking the agent to fix the findings on your pull request, then re-run the review.
+
+| | |
+|---|---|
+| Server URL | `https://openvscan.com/mcp`, or `<your-origin>/mcp` on a self-hosted deployment |
+| Transport | Streamable HTTP, stateless, JSON responses |
+| Sign-in | OAuth, through the deployment's WorkOS AuthKit domain, with the same account as the dashboard |
+
+The server acts as you. It sees the repositories you connected in the dashboard and nothing else, so sign in to the dashboard and connect your repositories first.
+
+## Connect
+
+**Settings → Connect your coding agent** in the dashboard shows the server URL and these commands with your deployment's URL filled in. The examples below use the hosted URL.
+
+### Claude Code
+
+```bash
+claude mcp add --transport http openvscan https://openvscan.com/mcp
+```
+
+Then run `/mcp` inside Claude Code, choose **openvscan** and sign in. Claude Code opens the sign-in page in your browser.
+
+### Codex
+
+```bash
+codex mcp add openvscan --url https://openvscan.com/mcp
+codex mcp login openvscan
+```
+
+`codex mcp login` opens the sign-in page in your browser.
+
+### Cursor
+
+Add the server to `.cursor/mcp.json` in your project, or to `~/.cursor/mcp.json` for every project:
+
+```json
+{
+  "mcpServers": {
+    "openvscan": {
+      "url": "https://openvscan.com/mcp"
+    }
+  }
+}
+```
+
+Cursor asks you to sign in when it first connects.
+
+### Other clients
+
+Any MCP client that supports Streamable HTTP and OAuth can connect. Point it at the server URL. On its first request without a token, the server answers `401` with a `WWW-Authenticate` header whose `resource_metadata` points to `/.well-known/oauth-protected-resource`. That document names the AuthKit domain as the authorization server, and the client signs you in there.
+
+## Tools
+
+| Tool | What it does | Parameters |
+|------|--------------|------------|
+| `list_repositories` | Your connected repositories, with their review trigger, scanners, agent, fail threshold and latest review. | None |
+| `list_reviews` | Recent reviews, newest first, with a dashboard link for each. | `repository` (id or `owner/name`), `pull_request` (number, with `repository`), `status` (`queued`, `running`, `completed`, `failed`, `cancelled`), `limit` (1 to 50, default 20) |
+| `get_review` | A review's summary, AI risk, counts and findings. Each finding has its severity, file and lines, whether it is in the diff, the AI verdict and reasoning, remediation and any suggested fix. Returns at most 200 findings. | `review_id`, `min_severity`, `in_diff_only` (default `false`), `include_dismissed` (default `false`: findings the AI marked false positive are left out) |
+| `start_review` | Reviews a branch's latest commit: the whole repository, with no pull request diff. Returns the new review's id. Poll `get_review` until it completes. | `repository`, `branch` (default: the repository's default branch) |
+| `rerun_review` | Runs a review again. A pull request review re-runs on the pull request's current head. | `review_id` |
+| `cancel_review` | Cancels a queued or running review. | `review_id` |
+| `set_pull_request_paused` | Pauses or resumes automatic reviews on one pull request. Pausing also cancels its running reviews. OpenVScan must already have seen the pull request. | `repository`, `pull_request`, `paused` |
+| `get_repository_settings` | A repository's review policy and its 20 most recent pull requests. | `repository` |
+| `update_repository_settings` | Changes a repository's review policy. Fields you leave out keep their current value. | `repository`, and any of `review_trigger`, `skip_drafts`, `base_branches`, `ignore_paths`, `scanners`, `agent` (`null` turns the AI reviewer off), `agent_model`, `focus`, `instructions`, `fail_on` |
+
+`repository` accepts the repository's OpenVScan id or its `owner/name`. The settings use the same values and rules as the dashboard. See [Repository settings](/docs/repository-settings).
+
+## What the agent can do
+
+A token from this sign-in carries your identity and nothing narrower. Every tool runs through the same server functions as the dashboard, with the same ownership checks, so the agent can do what you can do in the dashboard for your repositories and reviews. It cannot read or change agent credentials, installations or your account.
+
+Keep in mind:
+
+- **Starting or re-running a review spends AI quota.** A review with an AI reviewer runs on the repository owner's credential.
+- **Settings changes take effect on the next review.** An agent can turn scanners off, change **Fail the check on** or add ignored paths. Review what it proposes before you approve it.
+- **Findings contain untrusted text.** Titles, descriptions and AI reasoning come from scanners and the AI reviewer, which read the pull request's code. Treat them as you would the code itself.
+
+The server checks each request's bearer token against AuthKit's signing keys. The token must be issued by the deployment's AuthKit domain, for the audience `<origin>/mcp` or, when that is not a resource indicator, the environment's client ID. Tokens issued to a WorkOS AI agent identity, rather than to a user, are refused. OpenVScan does not store MCP tokens; your client keeps them. To disconnect, remove the server from your client, for example with `claude mcp remove openvscan` or `codex mcp remove openvscan`.
+
+## Self-hosting
+
+The MCP server is off until you set `WORKOS_AUTHKIT_DOMAIN`. Without it, `/mcp` returns `404` and the dashboard hides **Connect your coding agent**. Sign-in to the dashboard must already work: see [Configuration](/docs/configuration#sign-in-with-workos).
+
+<Steps>
+<Step title="Allow MCP clients in WorkOS">
+
+In the WorkOS dashboard, open the MCP or OAuth application settings for the environment your deployment uses:
+
+- Enable **Client ID Metadata Document (CIMD)**, **Dynamic Client Registration (DCR)**, or both. MCP clients register themselves through one of these. Enabling both lets any current client connect.
+- Optionally, add `https://openvscan.example.com/mcp` (your origin) as a resource indicator. AuthKit then issues tokens for that audience. Without it, tokens carry the environment's client ID as their audience, which the server also accepts. Use a WorkOS environment only for OpenVScan, since any AuthKit token from it is accepted.
+
+Menu names in the WorkOS dashboard change from time to time. Look for these settings under the AuthKit or Connect sections.
+
+</Step>
+<Step title="Set the AuthKit domain">
+
+Copy your AuthKit domain from the WorkOS dashboard, for example `your-app.authkit.app`, and set it in the `vars` block of `web/wrangler.jsonc`:
+
+```jsonc
+"vars": {
+  "VITE_APP_URL": "https://openvscan.example.com",
+  "WORKOS_AUTHKIT_DOMAIN": "your-app.authkit.app"
+}
+```
+
+The value works with or without `https://`.
+
+</Step>
+<Step title="Deploy the web Worker">
+
+```bash
+pnpm --filter openvscan-web run deploy
+```
+
+Then check the discovery document:
+
+```bash
+curl https://openvscan.example.com/.well-known/oauth-protected-resource
+```
+
+It returns your `/mcp` URL as `resource` and your AuthKit domain under `authorization_servers`. `/.well-known/oauth-authorization-server` on your origin returns AuthKit's own metadata, for clients that look for it there.
+
+</Step>
+</Steps>
+
+The server builds its URLs from `VITE_APP_URL`, so users must connect to that origin. A client pointed at the `workers.dev` URL while `VITE_APP_URL` names a custom domain is sent to the wrong resource.
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---------|-------|
+| `/mcp` returns `404` "MCP is not enabled on this deployment" | `WORKOS_AUTHKIT_DOMAIN` is empty on the web Worker. |
+| The client cannot register or never opens a sign-in page | Neither CIMD nor DCR is enabled in WorkOS. |
+| Sign-in succeeds, but every request still gets `401` | The token's audience is neither `<origin>/mcp` nor `WORKOS_CLIENT_ID`, for example a resource indicator for another origin: connect to the `VITE_APP_URL` origin. Or the token's issuer is not `WORKOS_AUTHKIT_DOMAIN`, for example because the domain points at a different WorkOS environment. |
+| `/.well-known/oauth-authorization-server` returns `502` | The web Worker could not fetch AuthKit's metadata. Check `WORKOS_AUTHKIT_DOMAIN`. |
+| `GET /mcp` returns `405` | Expected. The server is stateless and only answers `POST`. |
+| A tool says `No connected repository "..."` | The repository is not connected to your account. Call `list_repositories` to see the ones that are. |
+| `list_repositories` returns nothing | You signed in with a different account from the one that connected the repositories, or you have not connected any yet. |
