@@ -11,42 +11,53 @@ The web Worker is `openvscan-web`, configured in `web/wrangler.jsonc`.
 
 | Name | Required | Description | Example |
 |------|----------|-------------|---------|
-| `BETTER_AUTH_SECRET` | Yes | Secret Better Auth uses to sign sessions. | Output of `openssl rand -base64 32` |
-| `CREDENTIALS_KEY` | For AI review | AES-256-GCM key that encrypts the agent credentials users save in **Settings → AI agents**. Must be 32 random bytes, base64-encoded, and identical to the engine's value. Without it, users cannot save credentials. | Output of `openssl rand -base64 32` |
+| `WORKOS_API_KEY` | Yes | The secret API key of your WorkOS environment. The web Worker uses it to finish sign-in, refresh sessions, list and revoke sessions in **Settings**, and update or delete WorkOS users. Without it, or without `WORKOS_CLIENT_ID`, `/api/auth/signin` returns `503`. | `sk_...` |
+| `WORKOS_CLIENT_ID` | Yes | The client ID of your WorkOS environment. It is not sensitive, but keep it a secret next to `WORKOS_API_KEY`: a var with the same name would clash with it. | `client_...` |
+| `CREDENTIALS_KEY` | Yes | AES-256-GCM key. It seals the session cookie, linked GitHub account tokens and the agent credentials users save in **Settings → AI agents**. Must be 32 random bytes, base64-encoded, and identical to the engine's value. | Output of `openssl rand -base64 32` |
 | `GITHUB_APP_ID` | Yes | The GitHub App's numeric ID. | `123456` |
 | `GITHUB_APP_PRIVATE_KEY` | Yes | The App's private key in PEM format. Real newlines and escaped `\n` both work. | Contents of the downloaded `.pem` file |
 | `GITHUB_APP_SLUG` | Yes | The App's slug, used to build the install link `https://github.com/apps/<slug>/installations/new`. Without it, the dashboard shows no install button. | `openvscan-acme` |
 | `GITHUB_WEBHOOK_SECRET` | Yes | The App's webhook secret. Without it, every webhook delivery is rejected with `401`. | Output of `openssl rand -hex 32` |
-| `GITHUB_CLIENT_ID` | Yes | The App's OAuth client ID. Enables "Continue with GitHub" together with the client secret. | `Iv23li...` |
+| `GITHUB_CLIENT_ID` | Yes | The App's OAuth client ID. Users link their GitHub account through it. | `Iv23li...` |
 | `GITHUB_CLIENT_SECRET` | Yes | The App's OAuth client secret. | Generated under **Client secrets** on the App |
 
-`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are technically optional: without them, only email and password sign-in is available. In practice they are required, because connecting an installation checks the user's access with their GitHub token. See [Sign in with GitHub](/docs/github-app).
+Without `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, users can sign in but cannot link GitHub, and connecting an installation needs a linked GitHub account. See [Linking GitHub](/docs/github-app#linking-github).
 
 ## Web Worker variables
 
 | Name | Required | Description | Example |
 |------|----------|-------------|---------|
-| `BETTER_AUTH_URL` | Yes | The public origin of the web Worker. Better Auth uses it as its base URL and as the only trusted origin, so it must match what users type in the browser. | `https://openvscan.example.com` |
-| `VITE_APP_URL` | Yes | Set it to the same origin. The server falls back to it when `BETTER_AUTH_URL` is unset. If it is present in the environment when you run `vite build`, it is also compiled into the browser bundle as the auth client's base URL. Otherwise the browser uses its current origin. | `https://openvscan.example.com` |
+| `VITE_APP_URL` | Yes | The public origin of the web Worker. In production, the sign-in and GitHub link redirect URIs, the sign-out return address and the MCP resource URL are built from it, so it must match what users type in the browser. | `https://openvscan.example.com` |
+| `WORKOS_AUTHKIT_DOMAIN` | For MCP | Your AuthKit domain. MCP clients sign in through it. When it is empty, `/mcp` returns `404` and **Settings** hides **Connect your coding agent**. See [MCP server](/docs/mcp#self-hosting). | `your-app.authkit.app` |
 
-Both ship set to `https://openvscan.com`. Change them before you deploy.
+`VITE_APP_URL` ships set to `https://openvscan.com`, and the WorkOS values ship empty. Change them before you deploy.
 
-### Email
+### Sign in with WorkOS
 
-Verification and password-reset emails go through [Cloudflare Email Service](https://developers.cloudflare.com/email-service/). `web/wrangler.jsonc` declares a `send_email` binding named `EMAIL` and the var `EMAIL_FROM`.
+Sign-in uses [WorkOS](https://workos.com/docs/authkit) user management. The sign-in, sign-up and password pages are OpenVScan's own, on your domain, and call the WorkOS API from the web Worker. WorkOS keeps the passwords, sends the verification codes and password reset emails, and enforces the password rules. OpenVScan stores no passwords and sends no email. **Continue with GitHub** goes straight to GitHub through WorkOS.
 
-| Name | Required | Description | Example |
-|------|----------|-------------|---------|
-| `EMAIL_FROM` | For email | Sender address. Its domain must be onboarded with `wrangler email sending enable <domain>`. | `noreply@openvscan.example.com` |
+In the WorkOS dashboard, for the environment you deploy with:
 
-Without email, sign-up and sign-in still work, but nobody can reset a forgotten password and emails stay unverified. Signing in with GitHub then won't join an existing email account automatically; users link GitHub from **Settings → Sign-in methods** instead.
+- Add `https://openvscan.example.com/api/auth/callback` as a redirect URI.
+- Set the default **Sign-out URI** to `https://openvscan.example.com/`. Without it, signing out ends on a WorkOS error page.
+- Set the **Initiate login URI** to `https://openvscan.example.com/signin`, for sign-ins that start outside the app.
+- Enable **Email + Password**. WorkOS always requires a verified email, for GitHub sign-in too: the first sign-in of an unverified address gets a 6-digit code by email, entered on the sign-in page. After that, the address counts as verified.
+- Set the **Password reset URL** to `https://openvscan.example.com/reset-password`. WorkOS's reset email links there with `?token=`.
+- Optional: enable GitHub as a sign-in method. Configure the GitHub connection with this deployment's GitHub App client ID and secret, and turn on returning GitHub OAuth tokens. A user who then signs in with GitHub has their GitHub account linked at the same time. See [Linking GitHub](/docs/github-app#linking-github).
+
+Email sign-in, sign-up, the verification code and password reset run on `/signin`, `/signup`, `/forgot-password` and `/reset-password`. GitHub sign-in goes through `/api/auth/signin` to WorkOS and GitHub, and returns to `/api/auth/callback`. The session is one `httpOnly` cookie, `ovs_session`, holding the WorkOS access and refresh tokens sealed with `CREDENTIALS_KEY`. Each request checks the access token against WorkOS's signing keys and refreshes it when it expires, so a session revoked in WorkOS stops working within minutes.
+
+WorkOS's password API has no lockout, so the web Worker limits attempts with two [rate limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) bindings in `web/wrangler.jsonc`: `AUTH_IP_LIMITER` (20 a minute per client IP) and `AUTH_EMAIL_LIMITER` (5 a minute per email address). Each `namespace_id` must be unique in your Cloudflare account. Without the bindings, the forms are not rate limited.
+
+Each user's OpenVScan id is their WorkOS user id. Keep a deployment on one WorkOS environment: another environment has different user ids.
 
 ## Engine Worker secrets
 
-The engine is `openvscan-engine`, configured in `engine/wrangler.jsonc`. All three secrets are listed under `secrets.required`, and Wrangler refuses to deploy the engine without them.
+The engine is `openvscan-engine`, configured in `engine/wrangler.jsonc`. The three required secrets are listed under `secrets.required`, and Wrangler refuses to deploy the engine without them.
 
 | Name | Required | Description | Example |
 |------|----------|-------------|---------|
+| `DAYTONA_API_KEY` | No | A Daytona API key. When set, review sandboxes run on Daytona unless `SANDBOX_PROVIDER` says otherwise. See [Run sandboxes on Daytona](/docs/daytona). | `dtn_…` |
 | `CREDENTIALS_KEY` | Yes | The same value as the web Worker's. The engine decrypts the repository owner's credential with it when an AI review starts. | Output of `openssl rand -base64 32` |
 | `GITHUB_APP_ID` | Yes | The GitHub App's numeric ID. | `123456` |
 | `GITHUB_APP_PRIVATE_KEY` | Yes | The App's private key in PEM format. The engine uses it to create check runs, post reviews and comments, and mint read-only clone tokens. | Contents of the downloaded `.pem` file |
@@ -58,6 +69,11 @@ The engine is `openvscan-engine`, configured in `engine/wrangler.jsonc`. All thr
 | `APP_URL` | `https://openvscan.com` | Public origin of the web Worker. The engine builds the check run's "details" link and the links in failure messages from it. Set it to your origin. |
 | `SANDBOX_INSTANCE` | `standard-2` | Container instance type for review sandboxes. See Instance types below. |
 | `DEV_ROUTES` | `false` | Enables the `/__dev/*` smoke-test routes. Keep it `false` in production. |
+| `SANDBOX_PROVIDER` | empty | `cloudflare` or `daytona`. Empty uses Daytona when `DAYTONA_API_KEY` is set and Cloudflare otherwise. |
+| `DAYTONA_MODE` | `hybrid` | `hybrid` runs scanners on Daytona and the AI review on Cloudflare. `full` runs everything on Daytona and needs a Tier 3 or 4 Daytona organization. |
+| `DAYTONA_SNAPSHOT` | `openvscan-sandbox` | The Daytona snapshot sandboxes start from, built by `engine/scripts/daytona-snapshot.sh`. |
+| `DAYTONA_API_URL` | `https://app.daytona.io/api` | Daytona's API, for self-hosted Daytona. |
+| `DAYTONA_TARGET` | empty | Daytona region, such as `us` or `eu`. Empty uses your organization's default. |
 
 <Callout type="warning" title="Never enable DEV_ROUTES in production">
 
@@ -76,7 +92,7 @@ When `DEV_ROUTES` is `"true"`, anyone who can reach the engine's public URL can 
 - `standard-3`
 - `standard-4`
 
-Each run gets its own container, and the whole run (clone, scanners and agent) happens on it. Larger types cost more per second of runtime. Smaller types lower cost but leave less memory and CPU for Trivy, Opengrep and the agent on large repositories. Start with the default and adjust based on run times and failures you see in the dashboard. Cloudflare's Containers documentation lists the vCPU, memory and disk of each type.
+`SANDBOX_INSTANCE` applies to Cloudflare containers only; size Daytona sandboxes when you build the snapshot. Each run gets its own container, and the whole run (clone, scanners and agent) happens on it. Larger types cost more per second of runtime. Smaller types lower cost but leave less memory and CPU for Trivy, Opengrep and the agent on large repositories. Start with the default and adjust based on run times and failures you see in the dashboard. Cloudflare's Containers documentation lists the vCPU, memory and disk of each type.
 
 ## Bindings
 
@@ -100,7 +116,3 @@ Some names are referenced outside the binding itself. Keep them unless you chang
 `engine/container/Dockerfile` pins the tool versions with build arguments: `TRIVY_VERSION`, `GITLEAKS_VERSION`, `OPENGREP_VERSION`, `CLAUDE_CODE_VERSION`, `CODEX_VERSION` and `SANDBOX_VERSION`. `OPENGREP_RULES_REPO` and `OPENGREP_RULES_COMMIT` choose the Opengrep rules. Point them at your own rules repository if the opengrep-rules license does not suit your deployment.
 
 Change them by editing the defaults in the Dockerfile, and change them deliberately. Keep `SANDBOX_VERSION` in step with the `@cloudflare/sandbox` version in `engine/package.json`. The scanner output parsers in `engine/src/scanners` depend on each tool's flags and output format.
-
-## Password reset email
-
-OpenVScan does not send email. The password reset flow writes the reset link to the web Worker's logs, prefixed with `Reset password url:`. Users who sign in with GitHub are not affected.

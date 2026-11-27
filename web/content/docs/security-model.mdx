@@ -11,6 +11,8 @@ Each review gets its own Linux container, managed by a Durable Object named afte
 
 The container is destroyed when the review finishes, fails or is cancelled. It also shuts down after 20 minutes without activity.
 
+This page describes Cloudflare containers. A deployment can run sandboxes on Daytona instead, where Daytona's network rules and secrets take the place of `Outbound`. See [Run sandboxes on Daytona](/docs/daytona) for how that differs.
+
 ## Egress phases
 
 The engine switches the egress policy as the review moves between steps. Each phase allows only what that step needs.
@@ -20,7 +22,7 @@ The engine switches the egress policy as the review moves between steps. Each ph
 | `locked` | Between steps, and while Opengrep and Gitleaks run | Nothing |
 | `checkout` | Fetching the head commit | `git fetch` of the one repository under review: `GET /info/refs?service=git-upload-pack` and `POST /git-upload-pack` on `github.com`. Push and every other repository are refused. |
 | `scan` | The Trivy step only | `GET` and `HEAD` to Trivy's database hosts: `mirror.gcr.io`, `ghcr.io`, `pkg-containers.githubusercontent.com` |
-| `agent` | The AI review | `api.anthropic.com` for Claude Code, or `api.openai.com` for Codex. Nothing else. |
+| `agent` | The AI review | `api.anthropic.com` for Claude Code. For Codex, `api.openai.com` with an API key, or the Codex backend on `chatgpt.com` with a ChatGPT login or access token. For Cursor, `*.cursor.sh`, except its sign-in endpoints. Nothing else. |
 
 Refused requests get a `403` response and are logged by the engine.
 
@@ -52,14 +54,17 @@ OpenVScan stores data in Cloudflare D1 and R2.
 
 | Store | Contents |
 |-------|----------|
-| D1 | Accounts and sessions, GitHub App installations, connected repositories and their review policy, encrypted agent credentials (with the last four characters for display), pull request metadata (number, title, author, branches and commit SHAs), reviews (status, conclusion, settings snapshot, AI summary and risk, counts), findings (title, description, file, lines, severity, remediation, suggested fix, AI verdict and reasoning) and run logs |
+| D1 | Accounts (a copy of the WorkOS profile: name, email, picture), linked GitHub accounts (login and encrypted user token), GitHub App installations, connected repositories and their review policy, encrypted agent credentials (with the last four characters for display), pull request metadata (number, title, author, branches and commit SHAs), reviews (status, conclusion, settings snapshot, AI summary and risk, counts), findings (title, description, file, lines, severity, remediation, suggested fix, AI verdict and reasoning) and run logs |
 | R2 | Per-review artifacts under `runs/<review id>/`: `diff.json` (the changed-line map), `pr.diff` (the pull request's unified diff), the raw JSON output of each scanner, and the agent's `review.json` |
 
 Some things are never stored:
 
 - The repository checkout. It exists only inside the sandbox and is deleted with it.
 - Secret values found by Gitleaks. They are redacted before OpenVScan reads the output.
-- Agent credentials in plaintext.
+- Agent credentials and GitHub user tokens in plaintext.
+- Passwords. The sign-in form passes them to WorkOS and keeps no copy. Verification codes and password reset tokens are WorkOS's too.
+- Sessions. The session lives in a sealed cookie in your browser, not in D1.
+- MCP access tokens. Your coding agent keeps them.
 
 ## GitHub App permissions
 
@@ -83,4 +88,26 @@ The App subscribes to these webhook events:
 
 Every webhook is verified against its `X-Hub-Signature-256` signature before it is processed.
 
-When you install the App, GitHub redirects you back to OpenVScan with an installation id. Before linking that installation to your account, OpenVScan checks with GitHub, using your GitHub sign-in, that your account actually has access to it. This stops someone from claiming another account's installation by editing the redirect URL.
+When you install the App, GitHub redirects you back to OpenVScan with an installation id. Before linking that installation to your account, OpenVScan checks with GitHub, using your linked GitHub account, that you are the personal account it was installed on or an admin of the organization. This stops someone from claiming another account's installation by editing the redirect URL.
+
+## Sign-in and sessions
+
+The sign-in, sign-up and password reset pages are OpenVScan's, and the web Worker passes what you type straight to WorkOS's API. WorkOS checks the password, emails verification codes and reset links, and enforces the password rules. OpenVScan stores no passwords and logs none.
+
+- **Rate limits.** Sign-in, sign-up, code and reset attempts are limited to 5 a minute per email address and 20 a minute per IP, with Cloudflare rate limiting bindings. WorkOS itself does not lock accounts.
+- **No account probing.** A wrong email and a wrong password get the same message, and **Forgot password** reports success whether or not the email has an account. Sign-up does say when an email is already taken.
+- **Email verification.** When WorkOS needs the email verified, it holds the sign-in and emails a 6-digit code. The pending sign-in token stays in a sealed `httpOnly` cookie, `ovs_pending`, for ten minutes, so page scripts never see it.
+
+- **Session cookie.** After sign-in, OpenVScan sets one cookie, `ovs_session`. It is `httpOnly`, `Secure` in production and `SameSite=Lax`, and holds your WorkOS access and refresh tokens sealed with AES-256-GCM under `CREDENTIALS_KEY`.
+- **Short-lived access.** The access token is a JWT that lives about five minutes. Every request checks its signature against WorkOS's keys, and an expired token is refreshed with WorkOS. A session you sign out of or revoke stops working within minutes.
+- **Sessions in Settings.** **Settings → Sessions** lists your active WorkOS sessions and can sign out any of them, or all but the current one.
+- **Sign-out** is a `POST`, so a link on another site cannot sign you out. It clears the cookie and ends the session at WorkOS.
+- **Deleting your account** needs a sign-in within the last 24 hours. It cancels running reviews, deletes your WorkOS user and deletes your OpenVScan data.
+
+Linking GitHub is separate from sign-in. It gives OpenVScan a GitHub App user token, sealed the same way, that is used only to check installation access. See [Linking GitHub](/docs/github-app#linking-github).
+
+## MCP server
+
+The [MCP server](/docs/mcp) at `/mcp` accepts OAuth bearer tokens issued by the deployment's AuthKit domain. Each request's token is checked for its signature, its issuer and its audience. The audience must be the deployment's own `/mcp` URL (when it is a resource indicator in WorkOS) or the environment's `WORKOS_CLIENT_ID`, so a token from another WorkOS environment is refused. Dashboard session tokens have a different issuer and are refused too. Tokens issued to a WorkOS AI agent identity rather than a user are also refused.
+
+A valid token acts as you, with the same permissions as the dashboard: it can read your reviews, start, re-run and cancel reviews, pause pull requests and change repository settings. It cannot read agent credentials or change your account. Only connect clients you trust with that access.

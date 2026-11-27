@@ -86,6 +86,51 @@ Versions before the pull request review pipeline had projects and ad-hoc scans. 
 
 The old `openvscan-scanner` Worker and `openvscan-scans` queue are no longer used. Delete them from your Cloudflare account after the upgrade.
 
+### Upgrading to WorkOS sign-in
+
+Earlier versions signed users in with Better Auth: email and password, or GitHub through the App's OAuth client, with email sent through Cloudflare Email Service. Sign-in now uses WorkOS AuthKit, and user ids are WorkOS user ids.
+
+<Callout type="warning" title="Migration 0006 deletes every user">
+
+Accounts are not carried over. Migration `0006_workos_auth` deletes every row in `user`, and everything that belongs to a user goes with it: installations, connected repositories, pull requests, reviews, findings and saved agent credentials. It drops the `session`, `account`, `verification` and `rate_limit` tables, creates `github_account`, and drops `repository.auto_review`. Back up the database first if you need any of it.
+
+</Callout>
+
+<Steps>
+<Step title="Set up WorkOS">
+
+Follow the **Set up WorkOS AuthKit** step in [Deploy to Cloudflare](/docs/deploy#deploy). It registers `<origin>/api/auth/callback` as a redirect URI and gives you the client ID and API key.
+
+</Step>
+<Step title="Update the GitHub App">
+
+Replace the callback URL `<origin>/api/auth/callback/github` with `<origin>/api/github/link/callback`. If users will sign in with GitHub through WorkOS, also add the GitHub redirect URI WorkOS shows. Keep the **Email addresses** account permission. See [Linking GitHub](/docs/github-app#linking-github).
+
+</Step>
+<Step title="Change the configuration">
+
+In `web/wrangler.jsonc`, remove `BETTER_AUTH_URL`, `EMAIL_FROM` and the `send_email` binding `EMAIL`, add `WORKOS_AUTHKIT_DOMAIN` for the [MCP server](/docs/mcp), and add the `ratelimits` bindings `AUTH_IP_LIMITER` and `AUTH_EMAIL_LIMITER` that limit sign-in attempts. Then set the new secrets and delete the old one:
+
+```bash
+pnpm --filter openvscan-web exec wrangler secret put WORKOS_CLIENT_ID
+pnpm --filter openvscan-web exec wrangler secret put WORKOS_API_KEY
+pnpm --filter openvscan-web exec wrangler secret delete BETTER_AUTH_SECRET
+```
+
+`CREDENTIALS_KEY` is now required on the web Worker, because it seals the session cookie.
+
+</Step>
+<Step title="Migrate and deploy">
+
+Apply the migrations and deploy as in [Upgrade](#upgrade). Everyone signs up again, links GitHub, installs or reconnects the App, connects their repositories and saves their agent credentials.
+
+</Step>
+</Steps>
+
+The App stays installed on GitHub after its OpenVScan user is deleted. To reconnect an existing installation, a user clicks **Install GitHub App** under **Repositories**, picks the account and saves its settings on GitHub. With **Redirect on update** checked, GitHub sends them back through the setup URL with the installation id.
+
+Review artifacts in R2 are not deleted by the migration. Remove the objects under `runs/` in the `openvscan-artifacts` bucket if you don't want to keep them.
+
 ### Your own schema changes
 
 If you change the schema in a fork, generate the migration with `pnpm db:generate` and commit it. When you merge a later upstream release that also adds migrations, check the migration numbers and the files in `packages/db/migrations/meta` for conflicts before you apply anything.
@@ -97,6 +142,8 @@ If you change the schema in a fork, generate the migration with `pnpm db:generat
 Agent credentials are encrypted with AES-256-GCM using `CREDENTIALS_KEY`, with each row's id bound in as additional data. There is no re-encryption path. After you change the key, the engine cannot decrypt any credential saved under the old one, and every user has to save their credential again.
 
 Until they do, a run with an agent fails at the AI review step and its check concludes neutral. If you delete the old credentials instead, runs skip the AI review and log that no credential is configured. Scanner results are still published.
+
+The same key seals session cookies and linked GitHub tokens. Changing it signs everyone out, and users have to link GitHub again before they connect another organization installation.
 
 <Steps>
 <Step title="Generate a new key">
@@ -120,12 +167,13 @@ Enter the same value both times. Each command deploys a new version immediately.
 
 ```bash
 pnpm --filter openvscan-web exec wrangler d1 execute openvscan --remote --command "DELETE FROM agent_credential"
+pnpm --filter openvscan-web exec wrangler d1 execute openvscan --remote --command "DELETE FROM github_account"
 ```
 
 </Step>
 <Step title="Ask users to save their credentials again">
 
-Each user opens **Settings → AI agents** and saves their Claude or OpenAI credential. It is sealed with the new key.
+Each user signs in again, opens **Settings → AI agents** and saves their credential, and links GitHub under **Settings → GitHub account**. Both are sealed with the new key.
 
 </Step>
 </Steps>
@@ -140,11 +188,11 @@ Change the secret on the App and set `GITHUB_WEBHOOK_SECRET` on the web Worker. 
 
 ### GitHub OAuth client secret
 
-Generate a new client secret on the App, set `GITHUB_CLIENT_SECRET` on the web Worker, then delete the old secret on GitHub.
+Generate a new client secret on the App, set `GITHUB_CLIENT_SECRET` on the web Worker, then delete the old secret on GitHub. If WorkOS's GitHub connection uses the same App, update the secret there too.
 
-### BETTER_AUTH_SECRET
+### WorkOS API key
 
-Better Auth signs session cookies with this secret. Changing it invalidates existing sessions, so every user has to sign in again.
+Create a new API key in the WorkOS dashboard, set `WORKOS_API_KEY` on the web Worker, then revoke the old key in WorkOS. Sessions are not affected.
 
 ## Licensing
 
@@ -158,7 +206,7 @@ The container image bundles third-party tools under their own licenses:
 | Gitleaks | MIT |
 | Opengrep | LGPL-2.1 |
 | opengrep-rules | LGPL-2.1 with the Commons Clause |
-| Claude Code, Codex | Their vendors' terms |
+| Claude Code, Codex, Cursor CLI | Their vendors' terms |
 
 The Commons Clause restricts selling a product or service whose value derives substantially from the software. Review it before you sell a hosted service built on the bundled rules. To use different rules, set `OPENGREP_RULES_REPO` and `OPENGREP_RULES_COMMIT` in `engine/container/Dockerfile`.
 
