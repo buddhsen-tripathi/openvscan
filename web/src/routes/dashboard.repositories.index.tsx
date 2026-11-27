@@ -1,7 +1,8 @@
-import { AGENT_INFO } from "@openvscan/core";
+import { AGENT_INFO, REVIEW_TRIGGER_INFO } from "@openvscan/core";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import Link from "@/components/AppLink";
+import { AgentLogo } from "@/components/brand/AgentLogo";
 import { BrushPanel } from "@/components/brand/BrushPanel";
 import { SeverityCountsInline, timeAgo } from "@/components/dashboard/RunList";
 import {
@@ -40,7 +41,7 @@ const SETUP_ERRORS: Record<string, string> = {
     "GitHub didn't say which installation to connect. Install the App again.",
   invalid: "That installation id isn't valid.",
   github_not_linked:
-    "Link your GitHub account in Settings → Sign-in methods, then install the App again.",
+    "Link your GitHub account in Settings → GitHub account, then install the App again.",
   not_admin:
     "Only the account owner or an organization admin can connect this installation.",
   taken: "This installation is already connected to another OpenVScan account.",
@@ -78,7 +79,7 @@ function RepositoriesPage() {
     <>
       <PageHeader
         title="Repositories"
-        description="Every pull request on a connected repository gets a security review."
+        description="Connected repositories and when their pull requests get reviewed."
         actions={
           hasInstallation ? (
             <div className="flex gap-2">
@@ -201,7 +202,7 @@ function RepositoriesPage() {
                               )}
                             </div>
                             <div className="mt-0.5 text-[12.5px] text-muted-foreground md:hidden">
-                              {repo.autoReview ? "Every PR" : "Manual"} ·{" "}
+                              {REVIEW_TRIGGER_INFO[repo.reviewTrigger].label} ·{" "}
                               {latest
                                 ? timeAgo(latest.createdAt)
                                 : "no reviews"}
@@ -209,20 +210,26 @@ function RepositoriesPage() {
                           </div>
                         </div>
                         <div className="hidden text-[13px] text-foreground md:block">
-                          {repo.autoReview ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="size-1.5 rounded-full bg-accent-brand" />
-                              Every PR
+                          {repo.reviewTrigger === "request" ? (
+                            <span className="text-muted-foreground">
+                              On request
                             </span>
                           ) : (
-                            <span className="text-muted-foreground">
-                              Manual only
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="size-1.5 rounded-full bg-accent-brand" />
+                              {REVIEW_TRIGGER_INFO[repo.reviewTrigger].label}
                             </span>
                           )}
                         </div>
                         <div className="hidden text-[13px] text-foreground md:block">
                           {repo.agent ? (
-                            AGENT_INFO[repo.agent].label
+                            <span className="inline-flex items-center gap-2">
+                              <AgentLogo
+                                agent={repo.agent}
+                                className="size-3.5"
+                              />
+                              {AGENT_INFO[repo.agent].label}
+                            </span>
                           ) : (
                             <span className="text-muted-foreground">
                               Scanners only

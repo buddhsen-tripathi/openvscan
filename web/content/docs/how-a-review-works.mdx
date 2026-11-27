@@ -7,7 +7,7 @@ Each review is one run of a durable pipeline for one commit. It checks out the c
 
 ## What starts a review
 
-A review starts when GitHub sends a `pull_request` event with one of these actions for a connected repository:
+A review starts when GitHub sends a `pull_request` event with one of these actions for a connected repository, and the repository's **Review pull requests** setting includes it:
 
 | Action | When it happens |
 |--------|-----------------|
@@ -16,15 +16,16 @@ A review starts when GitHub sends a `pull_request` event with one of these actio
 | `reopened` | A closed pull request is reopened |
 | `ready_for_review` | A draft is marked ready for review |
 
-Nothing happens if **Review pull requests** is off for the repository, or if the pull request is a draft and **Skip drafts** is on. Other actions, such as `edited` or `labeled`, are ignored. Closing a pull request cancels any review of it that is still in progress.
+**Every push** reviews on all four actions; **When opened** skips `synchronize`; **Only on request** reviews on none. Nothing happens either if the pull request is paused, its base branch is not in **Target branches**, or it is a draft and **Skip drafts** is on. Other actions, such as `edited` or `labeled`, are ignored. Closing a pull request cancels any review of it that is still in progress.
 
 You can also start a review by hand:
 
+- Comment `@<app> review` on the pull request. See [Pull request commands](/docs/repository-settings#pull-request-commands).
 - **Re-run** on the `OpenVScan Security Review` check in GitHub's Checks tab.
 - **Re-run** on a finished review in the dashboard.
 - **Review a branch** on a repository's page in the dashboard. See [Repository settings](/docs/repository-settings#review-a-branch).
 
-Manual reviews run even when **Review pull requests** is off.
+Manual reviews run whatever the **Review pull requests** setting is.
 
 ### Duplicate and superseded reviews
 

@@ -101,6 +101,38 @@ export async function createReadOnlyRepoToken(
   return data.token;
 }
 
+/**
+ * A short-lived codeload URL for a gzipped tarball of `repo` at `sha`. For a
+ * private repository it carries a token that works for that archive only and
+ * expires within minutes, so a sandbox can download it without a GitHub
+ * token.
+ */
+export async function repoTarballUrl(
+  creds: InstallationCredentials,
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<string> {
+  const token = await createReadOnlyRepoToken(creds, repo);
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/tarball/${sha}`,
+    {
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/vnd.github+json",
+        "user-agent": "openvscan",
+        "x-github-api-version": "2022-11-28",
+      },
+      redirect: "manual",
+    },
+  );
+  const location = res.headers.get("location");
+  if (res.status < 300 || res.status >= 400 || !location) {
+    throw new Error(`GitHub did not return a tarball URL (HTTP ${res.status})`);
+  }
+  return location;
+}
+
 export interface InstallationAccount {
   /** GitHub's numeric account id, as a string. */
   id: string;
@@ -162,6 +194,89 @@ export async function getBranchHeadSha(
     { owner, repo, ref: `heads/${branch}` },
   );
   return data.sha;
+}
+
+/** A pull request, in the shape the `pull_request` webhook sends it. */
+export interface PullRequestData {
+  number: number;
+  title: string;
+  html_url: string;
+  state: "open" | "closed";
+  merged?: boolean;
+  draft?: boolean;
+  user: { login: string; avatar_url?: string };
+  head: { ref: string; sha: string; repo: { full_name: string } | null };
+  base: { ref: string; sha: string };
+}
+
+export async function getPullRequest(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<PullRequestData> {
+  const { data } = await octokit.request(
+    "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+    {
+      owner,
+      repo,
+      pull_number: prNumber,
+    },
+  );
+  return data as PullRequestData;
+}
+
+/** Post a plain comment on a PR (or issue). */
+export async function postComment(
+  octokit: Octokit,
+  opts: { owner: string; repo: string; prNumber: number; body: string },
+): Promise<void> {
+  await octokit.request(
+    "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+    {
+      owner: opts.owner,
+      repo: opts.repo,
+      issue_number: opts.prNumber,
+      body: opts.body,
+    },
+  );
+}
+
+/** React to a PR conversation comment, e.g. 👀 to acknowledge a command. */
+export async function reactToComment(
+  octokit: Octokit,
+  opts: {
+    owner: string;
+    repo: string;
+    commentId: number;
+    content: "eyes" | "+1" | "confused";
+  },
+): Promise<void> {
+  await octokit.request(
+    "POST /repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
+    {
+      owner: opts.owner,
+      repo: opts.repo,
+      comment_id: opts.commentId,
+      content: opts.content,
+    },
+  );
+}
+
+/** Whether a user can push to the repo (write, maintain or admin). */
+export async function canPush(
+  octokit: Octokit,
+  opts: { owner: string; repo: string; username: string },
+): Promise<boolean> {
+  try {
+    const { data } = await octokit.request(
+      "GET /repos/{owner}/{repo}/collaborators/{username}/permission",
+      opts,
+    );
+    return data.permission === "admin" || data.permission === "write";
+  } catch {
+    return false;
+  }
 }
 
 /** Verify a GitHub webhook's `X-Hub-Signature-256` against the shared secret. */
