@@ -1,0 +1,68 @@
+---
+title: Repository settings
+description: Every per-repository review setting, what it does, and its default.
+---
+
+Each connected repository has its own review policy. To change it, open **Repositories**, pick the repository, edit the **Review policy** panel and click **Save policy**. Changes apply from the next review. A review already in progress keeps the settings it started with.
+
+## Settings
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| **Review pull requests** | On | Reviews a pull request when it is opened, pushed to, reopened or marked ready for review. When off, the repository is reviewed only when you start a review by hand. |
+| **Skip drafts** | On | Ignores draft pull requests until they are marked ready for review. |
+| **Scanners** | Trivy, Opengrep, Gitleaks | Which scanners run. See [Scanners](/docs/scanners). |
+| **AI reviewer** | None | **None** runs scanners only. **Claude Code** or **Codex** adds the AI review. See [AI review](/docs/ai-review). |
+| **Model** | Agent default | Model name passed to the agent with `--model`. Leave it empty to use the agent's default. |
+| **Instructions for the reviewer** | Empty | Extra guidance added to the end of the agent's prompt. |
+| **Fail the check on** | High | The lowest severity that fails the check: **Critical**, **High**, **Medium**, **Low** or **Never**. |
+
+**Model** and **Instructions for the reviewer** appear only when an AI reviewer is selected.
+
+You must keep at least one scanner or an AI reviewer on. Saving with neither fails with "Enable at least one scanner or an AI agent".
+
+### Review pull requests
+
+With this on, the `opened`, `synchronize`, `reopened` and `ready_for_review` pull request events start a review. With it off, pull request events are ignored, and the repository list shows **Manual only**. You can still review by clicking **Re-run** on the check in GitHub, **Re-run** in the dashboard, or **Review a branch**.
+
+### Skip drafts
+
+With this on, opening or pushing to a draft pull request does nothing. Marking it ready for review starts a review. Turn it off to review drafts on every push.
+
+### AI reviewer
+
+The AI reviewer uses the credential of the person who connected the repository. If they have not saved a credential for the selected agent, the settings panel shows a warning, and reviews run the scanners only until a credential is added. See [Agent credentials](/docs/agent-credentials).
+
+### Model
+
+The value is passed to the agent CLI as `--model` exactly as typed. It may contain only letters, digits and the characters `.`, `:`, `/`, `-` and `_`, up to 100 characters. OpenVScan does not check that the model exists. If the agent rejects it, the AI review fails with the agent's error and the scanner results are still published.
+
+### Instructions for the reviewer
+
+Up to 4,000 characters of guidance for the agent, added to the prompt under "Additional instructions from the repository owner". Unlike the pull request's content, these instructions are treated as trusted, because only you can set them. Use them to describe your codebase's conventions and what matters most. For example:
+
+```text
+All SQL goes through db/query.ts; treat raw string concatenation there as critical.
+```
+
+### Fail the check on
+
+The check fails when a finding at or above this severity is in the diff and was not dismissed by the agent as a false positive. **Never** makes every review neutral and advisory. See [Results on GitHub](/docs/results-on-github#pass-fail-or-neutral) for the full rule.
+
+## Review a branch
+
+The **Review a branch** panel on the repository page starts a review on demand. Enter a branch name, or leave it empty to use the default branch, and click **Run**.
+
+A branch review differs from a pull request review:
+
+- It scans the whole tree at the branch's latest commit. There is no diff, so every finding counts toward the conclusion.
+- It posts a check run on that commit, but no inline comments or summary comment.
+- If an AI reviewer is set, the agent reviews the whole repository, starting with the most security-sensitive code.
+
+## Disconnect a repository
+
+**Disconnect**, at the bottom of the **Review policy** panel, cancels any review in progress and removes the repository from OpenVScan, along with its review history in the dashboard. Pull requests on it are no longer reviewed.
+
+Disconnecting does not change the GitHub App's access. To remove access, use **Manage on GitHub** on the **Repositories** page. When you remove a repository from the App installation on GitHub, or uninstall the App, OpenVScan removes the affected repositories automatically.
+
+A repository can be connected to only one OpenVScan account at a time.

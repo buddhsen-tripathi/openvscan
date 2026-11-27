@@ -1,0 +1,69 @@
+---
+title: Self-hosting guide
+description: Run OpenVScan on your own Cloudflare account, what you deploy and what you need.
+---
+
+OpenVScan runs entirely on Cloudflare. A self-hosted install is two Workers, one D1 database, one R2 bucket and a GitHub App that you register yourself. This page lists the pieces, what you need before you start, and the order to follow.
+
+## What you deploy
+
+| Piece | Name | What it does |
+|-------|------|--------------|
+| Web Worker | `openvscan-web` | Dashboard (TanStack Start), sign-in (Better Auth), the GitHub webhook and install callback, and encrypted storage of agent credentials. Creates a `run` row for each review and hands it to the engine. |
+| Engine Worker | `openvscan-engine` | Owns every review after it is created. Exposes the `EngineApi` RPC entrypoint to the web Worker. |
+| Workflow | `openvscan-review` (class `ReviewWorkflow`) | The review pipeline, inside the engine: checkout, scanners, AI review, publish. Each step is durable and retried. |
+| Durable Object + Container | `ScanSandbox` | One sandbox container per run. The image holds Trivy, Opengrep and its rules, Gitleaks, Claude Code and Codex. |
+| Egress proxy | `Outbound` | A Worker entrypoint in the engine. The container has no direct internet access, and every HTTP(S) request it makes goes through this proxy. |
+| D1 database | `openvscan` | Users, sessions, installations, repositories, pull requests, runs, findings and encrypted credentials. Shared by both Workers. |
+| R2 bucket | `openvscan-artifacts` | Raw scanner output and PR diffs. Shared by both Workers. |
+| GitHub App | your choice | Receives pull request and check run events, and posts check runs, inline comments and the summary comment. Its OAuth client also provides "Continue with GitHub". |
+
+## How the pieces connect
+
+1. GitHub sends a `pull_request` webhook to the web Worker at `/api/github/webhook`.
+2. The web Worker records the run in D1 and calls `ENGINE.startRun(runId)` over a service binding.
+3. The engine starts a `ReviewWorkflow` instance. The workflow boots a `ScanSandbox` container, clones the PR head through `Outbound`, runs the scanners and then the coding agent.
+4. The engine publishes the result to GitHub with the App's installation token and writes it to D1, where the dashboard reads it.
+
+The web Worker's service binding points at the engine by name, so the engine must be deployed first. Both Workers bind the same D1 database and R2 bucket.
+
+## Requirements
+
+- **A Cloudflare account on the Workers Paid plan.** Containers are not available on the free plan.
+- **Docker**, running on the machine you deploy from. `wrangler deploy` builds the container image from `engine/container/Dockerfile` and pushes it to Cloudflare.
+- **Node.js 22.12 or later**, from the `engines` field in `package.json`.
+- **pnpm.** The `engines` field says 8 or later, but the lockfile is format 9.0 and `pnpm-workspace.yaml` uses `allowBuilds` to approve dependency build scripts, so use a current release.
+- **A GitHub account or organization to own the App.** Create the App under the organization whose repositories you want reviewed, or under your personal account for personal repositories.
+- **`openssl`**, or another way to generate random keys.
+- **A domain on Cloudflare (optional).** Without one, the web Worker is served from `https://openvscan-web.<your-subdomain>.workers.dev`.
+
+Users of your deployment bring their own Claude subscription token, Anthropic API key or OpenAI API key. You do not need a model provider account to run OpenVScan. See [Agent credentials](/docs/agent-credentials).
+
+## Choose your web origin first
+
+Several settings depend on the public URL of the web Worker: the GitHub App's callback, setup and webhook URLs, and the `BETTER_AUTH_URL`, `VITE_APP_URL` and `APP_URL` variables. Decide it before you register the App. Either:
+
+- a custom domain such as `https://openvscan.example.com`, which you attach to `openvscan-web` after the first deploy, or
+- the `workers.dev` URL, `https://openvscan-web.<your-subdomain>.workers.dev`. Your `workers.dev` subdomain is shown in the Cloudflare dashboard under Workers & Pages.
+
+The examples in this guide use `https://openvscan.example.com`. Replace it with your origin everywhere.
+
+## Costs
+
+OpenVScan has no license fee. Your costs come from the services it runs on:
+
+- **Cloudflare.** The Workers Paid subscription, plus usage-based charges for Worker requests and CPU time, Workflows, Durable Objects, Container instance time, D1 and R2. Container time is usually the largest part. It grows with the number of reviews, how long each one takes and the instance type you choose in `SANDBOX_INSTANCE`. Each run's sandbox is destroyed when the run ends.
+- **Model usage.** The agent runs on the credential each user saves, so the provider bills that user's subscription or API account. If you only review your own repositories with your own credential, that is you.
+- **GitHub.** Registering and using a GitHub App is free.
+
+Check Cloudflare's current pricing pages for the numbers.
+
+## Next steps
+
+Follow these pages in order:
+
+1. [Register a GitHub App](/docs/github-app): create the App, generate its private key and collect its IDs.
+2. [Deploy to Cloudflare](/docs/deploy): create D1 and R2, apply migrations, set secrets, deploy the engine and then the web Worker, and run a test review.
+3. [Configuration](/docs/configuration): reference for every secret and variable.
+
+For working on OpenVScan itself, see [Local development](/docs/local-development). To move to a newer version, see [Upgrading](/docs/upgrading).

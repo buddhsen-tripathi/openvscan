@@ -1,0 +1,91 @@
+---
+title: How a review works
+description: What starts a review, the steps it runs through, its time limits, and how to cancel or re-run it.
+---
+
+Each review is one run of a durable pipeline for one commit. It checks out the commit in a sandbox, runs the scanners, optionally runs the AI review, and publishes the results to GitHub. The pipeline is a Cloudflare Workflow, so every step is saved as it completes and retried on failure.
+
+## What starts a review
+
+A review starts when GitHub sends a `pull_request` event with one of these actions for a connected repository:
+
+| Action | When it happens |
+|--------|-----------------|
+| `opened` | A pull request is opened |
+| `synchronize` | New commits are pushed to the pull request |
+| `reopened` | A closed pull request is reopened |
+| `ready_for_review` | A draft is marked ready for review |
+
+Nothing happens if **Review pull requests** is off for the repository, or if the pull request is a draft and **Skip drafts** is on. Other actions, such as `edited` or `labeled`, are ignored. Closing a pull request cancels any review of it that is still in progress.
+
+You can also start a review by hand:
+
+- **Re-run** on the `OpenVScan Security Review` check in GitHub's Checks tab.
+- **Re-run** on a finished review in the dashboard.
+- **Review a branch** on a repository's page in the dashboard. See [Repository settings](/docs/repository-settings#review-a-branch).
+
+Manual reviews run even when **Review pull requests** is off.
+
+### Duplicate and superseded reviews
+
+GitHub can deliver the same webhook more than once. OpenVScan skips a pull request event if that pull request already has a queued, running or completed review for the same head commit. A failed or cancelled review does not count, so that commit can be reviewed again.
+
+When you push a new commit, any review of the same pull request that is still queued or running is cancelled with the reason "Superseded by a newer commit". Its check is marked cancelled and the new commit gets a fresh review.
+
+### Settings snapshot
+
+When a review is created, it records the repository's scanners, AI reviewer, model and fail threshold. Changes you make to the repository settings apply from the next review, not to one already running.
+
+## The pipeline
+
+| Step | What it does |
+|------|--------------|
+| Load | Marks the review as running. Stops here if it was cancelled before it started. |
+| Check run | Creates the `OpenVScan Security Review` check on the head commit with status in progress. Its details link points to the review in the dashboard. |
+| Diff | Fetches the pull request's changed files and patches from the GitHub API. This is the same diff GitHub shows, and it decides which findings are in the diff and where inline comments can go. |
+| Checkout | Starts a sandbox container for this review and fetches exactly the head commit, at depth 1, through the egress proxy using a read-only token for this one repository. |
+| Scanners | Runs each enabled scanner as its own step: Trivy, then Opengrep, then Gitleaks. |
+| AI review | Runs only if an AI reviewer is set. Writes the prompt, diff and scanner findings into the sandbox, starts the agent in the background, and checks on it every 30 seconds. |
+| Publish | Decides the conclusion, completes the check run with annotations, posts the inline review, and creates or updates the summary comment. |
+| Cleanup | Destroys the sandbox. |
+
+Pull requests from forks work the same way. GitHub serves a pull request's head commit from the base repository, so checkout never needs access to the fork.
+
+The dashboard shows progress in four stages: **Checkout**, **Scanners**, **AI review** and **Publish**. **AI review** shows as off when the repository has no AI reviewer.
+
+See [Scanners](/docs/scanners), [AI review](/docs/ai-review) and [Results on GitHub](/docs/results-on-github) for detail on each stage.
+
+## Time limits
+
+| Stage | Limit |
+|-------|-------|
+| Checkout | 10 minutes for the git fetch. The step is retried up to 2 times. |
+| Trivy | 10 minutes |
+| Opengrep | 15 minutes |
+| Gitleaks | 5 minutes |
+| AI review | About 25 minutes: 50 checks, 30 seconds apart |
+| Publish | 5 minutes, retried up to 3 times |
+
+Each scanner step is retried once.
+
+## When something goes wrong
+
+A scanner that fails or times out does not stop the review. The error is written to the run log, the other scanners still run, and the summary comment lists which scanner failed.
+
+The AI review never fails a review either. If the credential is missing, the agent exits with an error, its output does not validate, or it runs past the time limit, the scanner results are still published. The summary comment shows "AI review did not complete" with the reason.
+
+If any other step fails after its retries, the review is marked failed. The check concludes as neutral with the title "Security review could not complete" and the error message, and the sandbox is destroyed.
+
+## Cancel a review
+
+Open the review from **Reviews** and click **Cancel** while it is queued or running. OpenVScan stops the pipeline, destroys the sandbox and marks the check on GitHub as cancelled. No inline review or summary comment is posted for it.
+
+Reviews are also cancelled automatically when a newer commit supersedes them, when the pull request is closed, or when you disconnect the repository.
+
+## Re-run a review
+
+From the dashboard, open a finished review and click **Re-run**. For a pull request review, this reviews the pull request's latest known head commit and cancels any review of that pull request still in progress. For a branch review, it reviews the same commit again.
+
+From GitHub, click **Re-run** on the `OpenVScan Security Review` check. OpenVScan reviews that check's commit again.
+
+A re-run uses the repository's current settings. Inline comments for findings that an earlier review of the same pull request already reported are not posted again.

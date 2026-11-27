@@ -1,28 +1,37 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { MotionConfig } from "framer-motion";
 import Footer from "@/components/Footer";
-import HeroSection from "@/components/HeroSection";
-import CTASection from "@/components/homepage/CTASection";
-import FAQSection from "@/components/homepage/FAQSection";
-import FeatureSection from "@/components/homepage/FeatureSection";
-import FeatureShowcaseSection from "@/components/homepage/FeatureShowcaseSection";
-import HowItWorksSection from "@/components/homepage/HowItWorksSection";
+import {
+  Details,
+  Faq,
+  FinalCta,
+  Hero,
+  HowItWorks,
+  OnThePr,
+  WaysToRun,
+} from "@/components/landing/Sections";
 import Navbar from "@/components/Navbar";
 
 export const Route = createFileRoute("/")({
-  component: HomePage,
+  component: LandingPage,
 });
 
-function HomePage() {
+function LandingPage() {
   return (
-    <main>
-      <Navbar />
-      <HeroSection />
-      <FeatureSection />
-      <HowItWorksSection />
-      <FeatureShowcaseSection />
-      <FAQSection />
-      <CTASection />
-      <Footer />
-    </main>
+    <MotionConfig reducedMotion="user">
+      <div className="paper min-h-screen overflow-x-clip bg-paper font-sans text-ink">
+        <Navbar />
+        <main>
+          <Hero />
+          <HowItWorks />
+          <OnThePr />
+          <Details />
+          <WaysToRun />
+          <Faq />
+          <FinalCta />
+        </main>
+        <Footer />
+      </div>
+    </MotionConfig>
   );
 }

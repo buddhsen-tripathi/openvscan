@@ -1,6 +1,10 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
+import mdx from "@mdx-js/rollup";
+import rehypeShiki from "@shikijs/rehype";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
+import remarkFrontmatter from "remark-frontmatter";
+import remarkGfm from "remark-gfm";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -10,16 +14,34 @@ export default defineConfig({
   server: { port: 3000 },
   plugins: [
     cloudflare({ viteEnvironment: { name: "ssr" } }),
+    // Docs pages: content/docs/*.mdx. Code blocks are highlighted at build
+    // time with both themes; CSS picks one (see docs.css).
+    {
+      enforce: "pre",
+      ...mdx({
+        providerImportSource: "@mdx-js/react",
+        remarkPlugins: [remarkGfm, remarkFrontmatter],
+        rehypePlugins: [
+          [
+            rehypeShiki,
+            {
+              themes: { light: "github-light", dark: "github-dark-dimmed" },
+              defaultColor: false,
+            },
+          ],
+        ],
+      }),
+    },
     tanstackStart(),
-    viteReact(),
+    viteReact({ include: /\.(mdx|js|jsx|ts|tsx)$/ }),
   ],
   resolve: {
     alias: {
       "@": new URL(".", import.meta.url).pathname,
       "@openvscan/db": new URL("../packages/db/src/index.ts", import.meta.url)
         .pathname,
-      "@openvscan/types": new URL(
-        "../packages/types/src/index.ts",
+      "@openvscan/core": new URL(
+        "../packages/core/src/index.ts",
         import.meta.url,
       ).pathname,
       "@openvscan/github": new URL(

@@ -1,0 +1,72 @@
+---
+title: FAQ
+description: Short answers to common questions about OpenVScan's behaviour, cost and data handling.
+---
+
+Short answers, with links to the page that has the detail.
+
+## Do I need Claude Code or Codex?
+
+No. With **AI reviewer** set to **None**, OpenVScan runs Trivy, Opengrep and Gitleaks and publishes their findings. The agent adds triage of those findings and a review of the changed code. See [AI review](/docs/ai-review).
+
+## What does it cost?
+
+The AI step runs on your own credential. Anthropic or OpenAI bill you for API key usage, and a Claude subscription token counts against your Claude plan.
+
+Self-hosting needs the Cloudflare Workers Paid plan for Containers, plus whatever Cloudflare usage your reviews generate. See [Self-hosting](/docs/self-hosting).
+
+## Whose credential pays for a review?
+
+The credential of the OpenVScan user who connected the repository. Every pull request on that repository uses it, including pull requests from forks. See [Agent credentials](/docs/agent-credentials#whose-credential-a-review-uses).
+
+## Does it review pull requests from forks?
+
+Yes. GitHub serves a pull request's head commit from the base repository, so OpenVScan fetches it with a token scoped to your repository and never needs access to the fork. The AI review uses the repository owner's credential, so outside contributors spend your quota.
+
+## Does it work on private repositories?
+
+Yes. The GitHub App reads private repositories you give it access to. Each checkout uses a short-lived, read-only token limited to that one repository.
+
+## Which languages does it support?
+
+It depends on the scanner. Trivy covers the dependency manifests, lockfiles and infrastructure-as-code formats it supports. Opengrep runs the security rules in the bundled opengrep-rules pack, which cover many languages. Gitleaks scans any text file. The AI agent reads whatever code is in the repository. See [Scanners](/docs/scanners).
+
+## What data leaves the sandbox?
+
+During checkout, a git fetch from GitHub. During the Trivy step, a database download from Trivy's mirrors. During the AI review, requests to `api.anthropic.com` or `api.openai.com`, which carry whatever code and findings the agent reads. Nothing else can leave. Results are posted to GitHub by the engine, outside the sandbox. See [Security model](/docs/security-model).
+
+## Will it block my merge?
+
+Only if you make it. A failing review sets the `OpenVScan Security Review` check to failure. Add that check as a required status check in your branch protection rules to block merges on it. Set **Fail the check on** to **Never** to keep reviews advisory.
+
+## Why did a pull request fail on a vulnerability it did not add?
+
+Dependency vulnerabilities have no line number, so they count as in the diff whenever the pull request changes the manifest or lockfile they were found in. Touching a lockfile brings all of its known vulnerabilities into the diff. See [Scanners](/docs/scanners#in-the-diff).
+
+## Why was my draft pull request not reviewed?
+
+**Skip drafts** is on by default. The review starts when you mark the pull request ready for review. Turn the setting off to review drafts.
+
+## Why are there no inline comments?
+
+Inline comments go only on findings that are in the diff, not dismissed by the agent, low severity or above, and on lines inside a diff hunk. Findings already reported by an earlier review of the same pull request are not repeated, and each review posts at most 25 comments. The summary comment and the dashboard list every finding. See [Results on GitHub](/docs/results-on-github#inline-review-comments).
+
+## Does it scan git history?
+
+No. Checkout fetches only the head commit, so Gitleaks and the other scanners see the current files. A secret removed in an earlier commit is not reported.
+
+## Can it push fixes to my branch?
+
+No. OpenVScan has no write access to repository contents. When the agent proposes an exact fix, the inline comment includes a GitHub suggestion that you can commit yourself.
+
+## Can I review a branch without a pull request?
+
+Yes. Use **Review a branch** on the repository's page in the dashboard. It scans the whole tree at the branch's latest commit and posts a check run, without pull request comments. See [Repository settings](/docs/repository-settings#review-a-branch).
+
+## Can two OpenVScan accounts connect the same repository?
+
+No. A repository can be connected to one account at a time. Connecting it from a second account fails with "This repository is already connected by another account".
+
+## How do I stop reviewing a repository?
+
+Turn off **Review pull requests** to keep the repository connected but review only on demand. Click **Disconnect** to remove it from OpenVScan entirely. To revoke the App's access, change the installation on GitHub. See [Repository settings](/docs/repository-settings#disconnect-a-repository).

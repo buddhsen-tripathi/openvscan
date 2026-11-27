@@ -6,11 +6,13 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { SITE_URL } from "@/components/site";
+import { THEME_SCRIPT } from "@/lib/theme";
 import appCss from "../styles.css?url";
 
-const siteTitle = "OpenVScan - Open Vulnerability Scanner";
+const siteTitle = "OpenVScan: security review for every pull request";
 const siteDescription =
-  "OpenVScan is a web security platform that combines open-source scanners with AI-assisted analysis for faster, more reliable pre-production testing.";
+  "Open-source security review for GitHub pull requests. Trivy, Opengrep and Gitleaks scan each PR, your own Claude Code or Codex agent triages the findings, and results land as a check and PR comments. Runs on Cloudflare.";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
@@ -23,15 +25,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         {
           name: "keywords",
           content:
-            "OpenVScan, vulnerability scanning, application security, AI security tooling",
+            "OpenVScan, pull request security review, SAST, secret scanning, Claude Code, Codex, Cloudflare",
         },
         { name: "creator", content: "Buddhsen Tripathi" },
         { property: "og:title", content: siteTitle },
         { property: "og:description", content: siteDescription },
-        {
-          property: "og:url",
-          content: "https://github.com/Buddhsen-tripathi/openvscan",
-        },
+        { property: "og:url", content: SITE_URL },
         { property: "og:site_name", content: "OpenVScan" },
         { property: "og:type", content: "website" },
         { name: "twitter:card", content: "summary_large_image" },
@@ -47,10 +46,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         },
         {
           rel: "stylesheet",
-          href: "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400..800;1,400..600&family=Lora:ital,wght@0,400..700;1,400..600&family=IBM+Plex+Mono:wght@400;500;600&display=swap",
+          href: "https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap",
         },
         { rel: "stylesheet", href: appCss },
-        { rel: "icon", href: "/logo.png", type: "image/png" },
+        { rel: "icon", href: "/logo.svg", type: "image/svg+xml" },
+        { rel: "apple-touch-icon", href: "/logo.png" },
       ],
     }),
     component: RootComponent,
@@ -69,16 +69,13 @@ function RootComponent() {
   );
 }
 
-// Applied before paint to avoid a flash of the wrong theme. Honors a stored
-// preference, falling back to the OS setting.
-const themeScript = `(function(){try{var t=localStorage.getItem('openvscan-theme');var dark=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',dark);}catch(e){}})();`;
-
 function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Applies the stored theme before paint, so there's no flash. */}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: required for the pre-paint theme script */}
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <HeadContent />
       </head>
       <body className="font-sans antialiased">

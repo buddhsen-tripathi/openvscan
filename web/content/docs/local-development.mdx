@@ -1,0 +1,160 @@
+---
+title: Local development
+description: Run both Workers locally, with the review sandbox in Docker, and smoke-test the scanners and agents.
+---
+
+You can run the whole stack on your machine: the web Worker under Vite, the engine under `wrangler dev`, and the review sandbox as a local Docker container. Both Workers share one local D1 database and R2 bucket, so a run created by the web Worker is visible to the engine.
+
+## Prerequisites
+
+- Node.js 22.12 or later and a current pnpm.
+- Docker, running. `wrangler dev` builds the sandbox image from `engine/container/Dockerfile` on first start.
+- `openssl` to generate keys.
+- For real pull request reviews: a GitHub App for development, and a tunnel such as `cloudflared` so GitHub can reach your machine. You do not need either to try the scanners and agents through the `/__dev` routes.
+
+## Install and configure
+
+```bash
+pnpm install
+cp web/.dev.vars.example web/.dev.vars
+cp engine/.dev.vars.example engine/.dev.vars
+```
+
+Both `.dev.vars` files are gitignored. Fill them in:
+
+- `CREDENTIALS_KEY`: generate one value with `openssl rand -base64 32` and put the **same** value in both files.
+- `BETTER_AUTH_SECRET` in `web/.dev.vars`: any random string.
+- `BETTER_AUTH_URL` and `VITE_APP_URL` in `web/.dev.vars`: keep `http://localhost:3000`.
+- `APP_URL` in `engine/.dev.vars`: keep `http://localhost:3000`.
+- The `GITHUB_*` values: from your development App. Leave them empty if you only want the dashboard and the `/__dev` routes.
+
+Values in `.dev.vars` override the `vars` in `wrangler.jsonc` during local development.
+
+## Create the local database
+
+```bash
+pnpm db:migrate:local
+```
+
+This applies every migration in `packages/db/migrations` to the local D1 database in `web/.wrangler/state`. The engine's `dev` script runs `wrangler dev --persist-to ../web/.wrangler/state`, so both Workers use the same local D1 and R2 state. To start from an empty database, stop both Workers, delete `web/.wrangler/state` and run the command again.
+
+## Run the Workers
+
+Start the engine in one terminal:
+
+```bash
+pnpm dev:engine
+```
+
+It listens on `http://localhost:8787`. The first start builds the container image, which takes several minutes.
+
+Start the web Worker in another:
+
+```bash
+pnpm dev:web
+```
+
+It listens on `http://localhost:3000`. The port is pinned in `web/vite.config.ts` so the browser origin matches `BETTER_AUTH_URL`; on any other port, Better Auth rejects sign-in with `INVALID_ORIGIN`. The web Worker's `ENGINE` service binding connects to the locally running engine.
+
+The dashboard works without the engine, but starting a review needs it.
+
+## Receive GitHub webhooks locally
+
+Register a separate GitHub App for development, following [Register a GitHub App](/docs/github-app), with these URLs:
+
+| Setting | Value |
+|---------|-------|
+| Callback URL | `http://localhost:3000/api/auth/callback/github` |
+| Setup URL | `http://localhost:3000/api/github/setup` |
+| Webhook URL | `https://<your-tunnel-host>/api/github/webhook` |
+
+Expose port 3000 with a tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+Set the App's webhook URL to the printed hostname plus `/api/github/webhook`. A quick tunnel gets a new hostname each time it starts, so update the App when you restart it. Keep using `http://localhost:3000` in the browser: sign-in and the setup redirect stay on localhost, and only webhooks go through the tunnel.
+
+Put the development App's ID, slug, private key, webhook secret and OAuth credentials in `web/.dev.vars`, and its ID and private key in `engine/.dev.vars`.
+
+## Smoke-test the sandbox with the `/__dev` routes
+
+The engine has routes for exercising the sandbox, the egress proxy, the scanners and the agents without GitHub or a D1 run. They are mounted only when `DEV_ROUTES` is `true`. Start the engine with the variable set:
+
+```bash
+pnpm --filter openvscan-engine exec wrangler dev --persist-to ../web/.wrangler/state --var DEV_ROUTES:true
+```
+
+You can also add `DEV_ROUTES=true` to `engine/.dev.vars`.
+
+### Scanners
+
+```bash
+curl -X POST localhost:8787/__dev/scan -d '{"repo":"OWASP/NodeGoat"}'
+```
+
+This boots a sandbox, checks that a request to `https://example.com` is refused, clones the public repository through the egress proxy, checks that fetching a different repository is refused, then runs Trivy, Opengrep and Gitleaks. The JSON response reports:
+
+- `egressBlockedStatus`: the result of the blocked request.
+- `clone`: the clone's exit code and stderr.
+- `otherRepoBlocked`: the result of fetching another repository.
+- `results`: per scanner, the exit code, number of findings, counts by severity, a few sample findings and the time taken.
+
+`repo` defaults to `OWASP/NodeGoat`. The route clones without a token, so use a public repository.
+
+### Agents
+
+```bash
+curl -X POST localhost:8787/__dev/agent \
+  -d '{"kind":"anthropic_api_key","secret":"sk-ant-..."}'
+```
+
+This starts Claude Code or Codex in the sandbox with a one-line prompt and the real credential held by the egress proxy, then waits for it to exit. The response includes the task state, the `review.json` the agent wrote, a parsed failure reason if it failed, and the tail of its output.
+
+| Field | Values |
+|-------|--------|
+| `kind` | `claude_oauth_token` or `anthropic_api_key` (Claude Code), `openai_api_key` (Codex). Defaults to `anthropic_api_key`. |
+| `secret` | The credential to test. |
+| `model` | Optional model name passed to the agent. |
+
+### Clean up
+
+Both routes reuse a sandbox named `dev-smoke`. Pass `"id"` in the body to use a different one. Destroy it when you are done:
+
+```bash
+curl -X POST localhost:8787/__dev/destroy
+```
+
+## Checks before you open a pull request
+
+| Command | What it runs |
+|---------|--------------|
+| `pnpm typecheck` | TypeScript across every package |
+| `pnpm test` | Engine unit tests with Vitest: scanner parsers, diff mapping, report and crypto |
+| `pnpm lint` | Biome on `web/` |
+| `pnpm build` | The web Worker's Vite build and type check |
+
+To apply Biome's fixes:
+
+```bash
+pnpm --filter openvscan-web exec biome check --write .
+```
+
+## Changing the schema or bindings
+
+After editing the Drizzle schema in `packages/db/src/schema`, generate a migration and apply it locally:
+
+```bash
+pnpm db:generate
+pnpm db:migrate:local
+```
+
+Commit the generated SQL file and the updated `packages/db/migrations/meta` files together.
+
+After changing bindings in a `wrangler.jsonc`, regenerate that Worker's types:
+
+```bash
+pnpm --filter openvscan-engine run cf-typegen
+pnpm --filter openvscan-web run cf-typegen
+```

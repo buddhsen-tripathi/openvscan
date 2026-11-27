@@ -1,0 +1,86 @@
+---
+title: Security model
+description: How the review sandbox, egress policy and GitHub permissions limit what a compromised agent or scanner can do, and what OpenVScan stores.
+---
+
+The coding agent reads input an attacker controls: the pull request's code, its description and its comments. OpenVScan assumes a prompt injection will eventually succeed, and is built so that a compromised agent has little it can reach. The same limits apply to the scanners, which also parse untrusted files.
+
+## The sandbox
+
+Each review gets its own Linux container, managed by a Durable Object named after the review. The container starts with internet access disabled. Every HTTP and HTTPS request it makes is intercepted and handed to `Outbound`, an egress proxy that allows or refuses each request based on the current phase of the review. Plain HTTP is always refused.
+
+The container is destroyed when the review finishes, fails or is cancelled. It also shuts down after 20 minutes without activity.
+
+## Egress phases
+
+The engine switches the egress policy as the review moves between steps. Each phase allows only what that step needs.
+
+| Phase | Used during | Allowed |
+|-------|-------------|---------|
+| `locked` | Between steps, and while Opengrep and Gitleaks run | Nothing |
+| `checkout` | Fetching the head commit | `git fetch` of the one repository under review: `GET /info/refs?service=git-upload-pack` and `POST /git-upload-pack` on `github.com`. Push and every other repository are refused. |
+| `scan` | The Trivy step only | `GET` and `HEAD` to Trivy's database hosts: `mirror.gcr.io`, `ghcr.io`, `pkg-containers.githubusercontent.com` |
+| `agent` | The AI review | `api.anthropic.com` for Claude Code, or `api.openai.com` for Codex. Nothing else. |
+
+Refused requests get a `403` response and are logged by the engine.
+
+The phases do not overlap. While the agent runs, it cannot reach GitHub, package registries or any other host it could use to send out code or tokens. Its only reachable endpoint is the model API on the account whose credential you supplied. Anything the agent reads may be sent there as part of its normal work.
+
+## Secrets
+
+No secret is ever placed in the container's environment, its files or Durable Object storage. Secrets exist only in the in-memory egress policy for the phase that needs them, and the policy is reset to `locked` as soon as that phase ends.
+
+- **GitHub token.** For checkout, the engine mints a short-lived GitHub App installation token scoped to the single repository under review, with only `contents: read` and `metadata: read`. The proxy adds it to the git fetch request. Git inside the container never sees it.
+- **Model credential.** The agent CLI gets a placeholder value. The proxy replaces it with your real token or key on requests to the model API. See [Agent credentials](/docs/agent-credentials).
+
+The agent runs with no GitHub token at all.
+
+## What the agent can affect
+
+Inside the sandbox, the agent can read the checked-out code and run shell commands. Its only effect on the outside world is the file it writes, `/workspace/.openvscan/review.json`. The engine treats that file as untrusted:
+
+- It validates the file against a strict schema with size limits. Anything that does not validate is discarded.
+- It applies verdicts only to finding ids it gave the agent. The agent cannot dismiss a finding it was not shown.
+- It sanitizes all text before posting it to GitHub, removing HTML and neutralizing `@` mentions. See [Results on GitHub](/docs/results-on-github#sanitization).
+- All GitHub writes (check runs, reviews, comments) are made by the engine, not the agent.
+
+Scanner output is handled the same way. It is parsed by fixed parsers in the engine and sanitized before it is posted.
+
+## What is stored where
+
+OpenVScan stores data in Cloudflare D1 and R2.
+
+| Store | Contents |
+|-------|----------|
+| D1 | Accounts and sessions, GitHub App installations, connected repositories and their review policy, encrypted agent credentials (with the last four characters for display), pull request metadata (number, title, author, branches and commit SHAs), reviews (status, conclusion, settings snapshot, AI summary and risk, counts), findings (title, description, file, lines, severity, remediation, suggested fix, AI verdict and reasoning) and run logs |
+| R2 | Per-review artifacts under `runs/<review id>/`: `diff.json` (the changed-line map), `pr.diff` (the pull request's unified diff), the raw JSON output of each scanner, and the agent's `review.json` |
+
+Some things are never stored:
+
+- The repository checkout. It exists only inside the sandbox and is deleted with it.
+- Secret values found by Gitleaks. They are redacted before OpenVScan reads the output.
+- Agent credentials in plaintext.
+
+## GitHub App permissions
+
+These are the repository permissions the App needs. If you self-host, [GitHub App](/docs/github-app) covers registering your own.
+
+| Permission | Access | Why |
+|------------|--------|-----|
+| Checks | Read and write | Create the `OpenVScan Security Review` check run, complete it and add annotations |
+| Pull requests | Read and write | Read the pull request and its changed files, post the inline review and the summary comment |
+| Contents | Read | Fetch the head commit for scanning |
+| Metadata | Read | Required by GitHub for every App |
+
+The App subscribes to these webhook events:
+
+| Event | Used for |
+|-------|----------|
+| Pull request | Start a review on open, push, reopen and ready for review. Cancel reviews when the pull request closes. |
+| Check run | Start a new review when you click **Re-run** on the check |
+| Installation | Remove an installation and its repositories when the App is uninstalled |
+| Installation repositories | Remove repositories you take away from the App |
+
+Every webhook is verified against its `X-Hub-Signature-256` signature before it is processed.
+
+When you install the App, GitHub redirects you back to OpenVScan with an installation id. Before linking that installation to your account, OpenVScan checks with GitHub, using your GitHub sign-in, that your account actually has access to it. This stops someone from claiming another account's installation by editing the redirect URL.
