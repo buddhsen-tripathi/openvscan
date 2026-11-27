@@ -7,12 +7,7 @@ export function createRouter() {
     defaultOptions: {
       queries: {
         staleTime: 30_000,
-        retry: (failureCount, error) => {
-          if (error instanceof Error && error.name === "ApiRateLimitError") {
-            return false;
-          }
-          return failureCount < 2;
-        },
+        retry: 2,
       },
     },
   });
@@ -30,6 +25,9 @@ export function createRouter() {
 let router: ReturnType<typeof createRouter> | undefined;
 
 export function getRouter() {
+  // On the server every request needs its own router and QueryClient: a shared
+  // one leaks cached data and pending redirects between requests and users.
+  if (typeof window === "undefined") return createRouter();
   router ??= createRouter();
   return router;
 }
