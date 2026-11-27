@@ -1,0 +1,52 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "openvscan-engine",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  "vars": {
+    // Public origin of the web app; used for "details" links on GitHub.
+    "APP_URL": "https://openvscan.com",
+    // Container size for review sandboxes (lite|basic|standard-1..4).
+    "SANDBOX_INSTANCE": "standard-2",
+    // Local smoke-test routes (/__dev/*). Never enable in production.
+    "DEV_ROUTES": "false"
+  },
+  "secrets": {
+    "required": ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY", "CREDENTIALS_KEY"]
+  },
+  // One Durable Object + container per run. The image holds the scanners and
+  // the coding-agent CLIs; it has no direct internet access (see Outbound).
+  "containers": [
+    {
+      "class_name": "ScanSandbox",
+      "scheduling_policy": "durable_object",
+      "images": { "scanner": { "dockerfile": "./container/Dockerfile" } }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "SANDBOX", "class_name": "ScanSandbox" }]
+  },
+  "exports": {
+    "ScanSandbox": { "type": "durable-object", "storage": "sqlite" }
+  },
+  // Durable, step-retried pipeline: checkout → scanners → AI review → publish.
+  "workflows": [
+    {
+      "name": "openvscan-review",
+      "binding": "REVIEW_WORKFLOW",
+      "class_name": "ReviewWorkflow"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "openvscan",
+      "database_id": "8b891571-fba1-4760-b2ba-a7c089b7e816",
+      "migrations_dir": "../packages/db/migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "ARTIFACTS", "bucket_name": "openvscan-artifacts" }]
+}
