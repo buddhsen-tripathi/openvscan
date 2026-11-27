@@ -9,48 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SignupRouteImport } from './routes/signup'
-import { Route as SigninRouteImport } from './routes/signin'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as DocsRouteImport } from './routes/docs'
-import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as DocsIndexRouteImport } from './routes/docs.index'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as DocsRouteImport } from './routes/docs'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SigninRouteImport } from './routes/signin'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
-import { Route as DocsSlugRouteImport } from './routes/docs.$slug'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
-import { Route as DashboardRunsIndexRouteImport } from './routes/dashboard.runs.index'
-import { Route as DashboardRepositoriesIndexRouteImport } from './routes/dashboard.repositories.index'
-import { Route as DashboardRunsIdRouteImport } from './routes/dashboard.runs.$id'
-import { Route as DashboardRepositoriesIdRouteImport } from './routes/dashboard.repositories.$id'
-import { Route as ApiGithubWebhookRouteImport } from './routes/api/github/webhook'
-import { Route as ApiGithubSetupRouteImport } from './routes/api/github/setup'
+import { Route as DocsIndexRouteImport } from './routes/docs.index'
+import { Route as DocsSlugRouteImport } from './routes/docs.$slug'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiGithubSetupRouteImport } from './routes/api/github/setup'
+import { Route as ApiGithubWebhookRouteImport } from './routes/api/github/webhook'
+import { Route as DashboardRepositoriesIndexRouteImport } from './routes/dashboard.repositories.index'
+import { Route as DashboardRepositoriesIdRouteImport } from './routes/dashboard.repositories.$id'
+import { Route as DashboardRunsIndexRouteImport } from './routes/dashboard.runs.index'
+import { Route as DashboardRunsIdRouteImport } from './routes/dashboard.runs.$id'
 
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SigninRoute = SigninRouteImport.update({
-  id: '/signin',
-  path: '/signin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DocsRoute = DocsRouteImport.update({
-  id: '/docs',
-  path: '/docs',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -58,55 +38,54 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsIndexRoute = DocsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => DocsRoute,
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SigninRoute = SigninRouteImport.update({
+  id: '/signin',
+  path: '/signin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DocsSlugRoute = DocsSlugRouteImport.update({
-  id: '/$slug',
-  path: '/$slug',
-  getParentRoute: () => DocsRoute,
-} as any)
 const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardRunsIndexRoute = DashboardRunsIndexRouteImport.update({
-  id: '/runs/',
-  path: '/runs/',
-  getParentRoute: () => DashboardRoute,
+const DocsIndexRoute = DocsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DocsRoute,
 } as any)
-const DashboardRepositoriesIndexRoute =
-  DashboardRepositoriesIndexRouteImport.update({
-    id: '/repositories/',
-    path: '/repositories/',
-    getParentRoute: () => DashboardRoute,
-  } as any)
-const DashboardRunsIdRoute = DashboardRunsIdRouteImport.update({
-  id: '/runs/$id',
-  path: '/runs/$id',
-  getParentRoute: () => DashboardRoute,
+const DocsSlugRoute = DocsSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => DocsRoute,
 } as any)
-const DashboardRepositoriesIdRoute = DashboardRepositoriesIdRouteImport.update({
-  id: '/repositories/$id',
-  path: '/repositories/$id',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const ApiGithubWebhookRoute = ApiGithubWebhookRouteImport.update({
-  id: '/api/github/webhook',
-  path: '/api/github/webhook',
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiGithubSetupRoute = ApiGithubSetupRouteImport.update({
@@ -114,10 +93,31 @@ const ApiGithubSetupRoute = ApiGithubSetupRouteImport.update({
   path: '/api/github/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
+const ApiGithubWebhookRoute = ApiGithubWebhookRouteImport.update({
+  id: '/api/github/webhook',
+  path: '/api/github/webhook',
   getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRepositoriesIndexRoute =
+  DashboardRepositoriesIndexRouteImport.update({
+    id: '/repositories/',
+    path: '/repositories/',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardRepositoriesIdRoute = DashboardRepositoriesIdRouteImport.update({
+  id: '/repositories/$id',
+  path: '/repositories/$id',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRunsIndexRoute = DashboardRunsIndexRouteImport.update({
+  id: '/runs/',
+  path: '/runs/',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRunsIdRoute = DashboardRunsIdRouteImport.update({
+  id: '/runs/$id',
+  path: '/runs/$id',
+  getParentRoute: () => DashboardRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -255,39 +255,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signin': {
-      id: '/signin'
-      path: '/signin'
-      fullPath: '/signin'
-      preLoaderRoute: typeof SigninRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/docs': {
-      id: '/docs'
-      path: '/docs'
-      fullPath: '/docs'
-      preLoaderRoute: typeof DocsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -297,19 +269,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/': {
-      id: '/docs/'
-      path: '/'
-      fullPath: '/docs/'
-      preLoaderRoute: typeof DocsIndexRouteImport
-      parentRoute: typeof DocsRoute
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signin': {
+      id: '/signin'
+      path: '/signin'
+      fullPath: '/signin'
+      preLoaderRoute: typeof SigninRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/dashboard/': {
       id: '/dashboard/'
@@ -318,13 +311,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/docs/$slug': {
-      id: '/docs/$slug'
-      path: '/$slug'
-      fullPath: '/docs/$slug'
-      preLoaderRoute: typeof DocsSlugRouteImport
-      parentRoute: typeof DocsRoute
-    }
     '/dashboard/settings': {
       id: '/dashboard/settings'
       path: '/settings'
@@ -332,39 +318,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSettingsRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/runs/': {
-      id: '/dashboard/runs/'
-      path: '/runs'
-      fullPath: '/dashboard/runs/'
-      preLoaderRoute: typeof DashboardRunsIndexRouteImport
-      parentRoute: typeof DashboardRoute
+    '/docs/': {
+      id: '/docs/'
+      path: '/'
+      fullPath: '/docs/'
+      preLoaderRoute: typeof DocsIndexRouteImport
+      parentRoute: typeof DocsRoute
     }
-    '/dashboard/repositories/': {
-      id: '/dashboard/repositories/'
-      path: '/repositories'
-      fullPath: '/dashboard/repositories/'
-      preLoaderRoute: typeof DashboardRepositoriesIndexRouteImport
-      parentRoute: typeof DashboardRoute
+    '/docs/$slug': {
+      id: '/docs/$slug'
+      path: '/$slug'
+      fullPath: '/docs/$slug'
+      preLoaderRoute: typeof DocsSlugRouteImport
+      parentRoute: typeof DocsRoute
     }
-    '/dashboard/runs/$id': {
-      id: '/dashboard/runs/$id'
-      path: '/runs/$id'
-      fullPath: '/dashboard/runs/$id'
-      preLoaderRoute: typeof DashboardRunsIdRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/repositories/$id': {
-      id: '/dashboard/repositories/$id'
-      path: '/repositories/$id'
-      fullPath: '/dashboard/repositories/$id'
-      preLoaderRoute: typeof DashboardRepositoriesIdRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/api/github/webhook': {
-      id: '/api/github/webhook'
-      path: '/api/github/webhook'
-      fullPath: '/api/github/webhook'
-      preLoaderRoute: typeof ApiGithubWebhookRouteImport
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/github/setup': {
@@ -374,12 +346,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiGithubSetupRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
+    '/api/github/webhook': {
+      id: '/api/github/webhook'
+      path: '/api/github/webhook'
+      fullPath: '/api/github/webhook'
+      preLoaderRoute: typeof ApiGithubWebhookRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/repositories/': {
+      id: '/dashboard/repositories/'
+      path: '/repositories'
+      fullPath: '/dashboard/repositories/'
+      preLoaderRoute: typeof DashboardRepositoriesIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/repositories/$id': {
+      id: '/dashboard/repositories/$id'
+      path: '/repositories/$id'
+      fullPath: '/dashboard/repositories/$id'
+      preLoaderRoute: typeof DashboardRepositoriesIdRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/runs/': {
+      id: '/dashboard/runs/'
+      path: '/runs'
+      fullPath: '/dashboard/runs/'
+      preLoaderRoute: typeof DashboardRunsIndexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/runs/$id': {
+      id: '/dashboard/runs/$id'
+      path: '/runs/$id'
+      fullPath: '/dashboard/runs/$id'
+      preLoaderRoute: typeof DashboardRunsIdRouteImport
+      parentRoute: typeof DashboardRoute
     }
   }
 }

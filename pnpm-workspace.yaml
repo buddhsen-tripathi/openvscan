@@ -11,3 +11,6 @@ allowBuilds:
   workerd: true
 minimumReleaseAgeExclude:
   - '@cloudflare/workers-types@5.20261127.1'
+autoInstallPeers: false
+overrides:
+  "@esbuild-kit/core-utils>esbuild": ^0.25.12

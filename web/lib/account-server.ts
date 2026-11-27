@@ -49,8 +49,8 @@ export const getAccount = createServerFn({ method: "GET" }).handler(
       db.query.account.findMany({
         where: eq(schema.account.userId, userId),
         columns: {
+          id: true,
           providerId: true,
-          accountId: true,
           createdAt: true,
         },
       }),
@@ -84,7 +84,7 @@ export const getAccount = createServerFn({ method: "GET" }).handler(
       hasPassword: accounts.some((a) => a.providerId === "credential"),
       github: github
         ? {
-            accountId: github.accountId,
+            id: github.id,
             login: await githubLogin(userId),
             linkedAt: github.createdAt,
           }

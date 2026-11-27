@@ -48,9 +48,17 @@ export class InstallationAccessError extends Error {
 
 /** The signed-in user's GitHub token (decrypted and refreshed by Better Auth). */
 export async function githubUserToken(userId: string): Promise<string | null> {
+  const account = await getDb().query.account.findFirst({
+    where: and(
+      eq(schema.account.userId, userId),
+      eq(schema.account.providerId, "github"),
+    ),
+    columns: { id: true },
+  });
+  if (!account) return null;
   try {
     const { accessToken } = await getAuth().api.getAccessToken({
-      body: { providerId: "github", userId },
+      body: { accountId: account.id, userId },
     });
     return accessToken ?? null;
   } catch {

@@ -184,8 +184,8 @@ export const useSetPasswordMutation = () =>
   );
 
 export const useUnlinkGithubMutation = () =>
-  useAccountMutation((_?: undefined) =>
-    authCall(authClient.unlinkAccount({ providerId: "github" })),
+  useAccountMutation((accountId: string) =>
+    authCall(authClient.unlinkAccount({ accountId })),
   );
 
 export const useRevokeSessionMutation = () =>

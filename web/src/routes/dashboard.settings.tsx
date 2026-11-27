@@ -343,7 +343,7 @@ function SignInMethods({ account }: { account: Account }) {
                       "Unlink GitHub? You'll sign in with your email and password.",
                     )
                   )
-                    unlink.mutate(undefined);
+                    unlink.mutate(github.id);
                 }}
               >
                 Unlink
