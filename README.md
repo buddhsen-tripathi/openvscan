@@ -1,220 +1,243 @@
 # OpenVScan
 
-OpenVScan is a web-based vulnerability scanner that pairs open-source security tooling with AI-assisted analysis for faster, more reliable pre-production security testing. It runs **entirely on Cloudflare** — Workers, Containers, D1, R2, and Queues.
+Open-source security review for GitHub pull requests. On every PR, OpenVScan
+checks out the code in an isolated container, runs open-source scanners
+(Trivy, Opengrep, Gitleaks), then has a coding agent (Claude Code or Codex,
+running on **your own** subscription or API key) triage those findings and
+review the diff. Results land on the PR as a check run, inline review comments
+and a summary comment, and in the dashboard.
+
+It runs entirely on Cloudflare: Workers, Workflows, Containers, D1 and R2.
+Self-host it on your own account, or use the hosted version.
+
+## What a review does
+
+1. A PR is opened or pushed to. The GitHub App webhook reaches the web Worker,
+   which records a `run` and hands it to the engine.
+2. The engine's **Workflow** opens an "OpenVScan Security Review" check run,
+   fetches the PR diff, and starts a **sandbox container** for the run.
+3. The container clones the PR head and runs the scanners you enabled:
+
+   | Scanner | Finds |
+   |---------|-------|
+   | [Trivy](https://github.com/aquasecurity/trivy) | Vulnerable dependencies, IaC misconfigurations |
+   | [Opengrep](https://github.com/opengrep/opengrep) + [opengrep-rules](https://github.com/opengrep/opengrep-rules) | Code-level issues: injection, XSS, SSRF, path traversal… |
+   | [Gitleaks](https://github.com/gitleaks/gitleaks) | Hard-coded secrets (redacted, never stored) |
+
+4. If an agent is configured, it reads the diff and the scanner findings. It
+   marks each finding as confirmed, false positive or needs review, and adds
+   issues the scanners missed.
+5. The engine publishes the results:
+   - The check run concludes pass, fail or neutral, with annotations.
+   - Inline comments are posted on changed lines, with suggested fixes where
+     the agent gave an exact one.
+   - A single summary comment is posted and kept up to date.
+
+A run **fails** only for a finding that meets all three conditions:
+- it is at or above the repository's `fail on` severity,
+- it is in the lines the PR changed,
+- the agent did not mark it a false positive.
+
+Pre-existing issues elsewhere in the repo are reported but never block a PR.
 
 ## Architecture
 
-| Tier | Stack | Responsibilities |
-|------|-------|------------------|
-| **Web Worker** (`web/`) | TanStack Start, React 19, Tailwind 4, Cloudflare Workers | UI, Better-auth, server functions (project/scan CRUD), queue producer, exports |
-| **Scanner Worker** (`workers/`) | Cloudflare Worker + Container, Queues | Consumes scan jobs, runs Trivy in a container, writes findings to D1 and artifacts to R2 |
-| **Database** | Cloudflare **D1** (SQLite, Drizzle ORM) | Users, sessions, projects, scans, findings, logs |
-| **Object storage** | Cloudflare **R2** | Raw scanner output artifacts |
-| **Queue** | Cloudflare **Queues** | Decouples scan dispatch from execution |
+```
+GitHub ──webhook──► web Worker (TanStack Start)          D1: users, repos, PRs, runs, findings
+                     ├─ dashboard + Better Auth            R2: raw scanner output, diffs
+                     └─ ENGINE.startRun(runId)  ──RPC──► engine Worker
+                                                          └─ ReviewWorkflow (durable steps)
+                                                              └─ ScanSandbox (Durable Object + Container)
+                                                                   └─ all egress ─► Outbound (policy proxy)
+```
 
-There is **no separate API server, Redis, or Postgres** — the web Worker owns data access via TanStack Start server functions, and a consumer Worker drives the scanner container.
+| Part | Path | Notes |
+|------|------|-------|
+| Web Worker | `web/` | UI, auth, GitHub webhook and install callback, credential storage. Calls the engine over a service binding. |
+| Engine Worker | `engine/` | `EngineApi` (RPC), `ReviewWorkflow`, `ScanSandbox` container, `Outbound` egress proxy. |
+| Container image | `engine/container/` | Debian + Trivy (DB baked in), Opengrep and its rules, Gitleaks, Claude Code, Codex. |
+| Shared | `packages/core`, `packages/db`, `packages/github` | Enums, zod schemas, crypto; Drizzle schema and migrations; GitHub App helpers (check runs, reviews, comments). |
 
-> **Plan requirement:** Cloudflare **Containers** require the Workers Paid plan ($5/mo). D1, R2, Queues, and Workers all have usable free tiers.
+### Sandbox security model
 
-## Quick Start
+The agent reads attacker-controlled input: the PR's code, its description and
+its comments. The design assumes a prompt injection will eventually succeed,
+and limits what a compromised agent can do:
+
+- The container starts with **no internet access**. Every HTTP(S) request is
+  intercepted by the `Outbound` Worker entrypoint, which allows traffic per
+  phase. Each phase allows only the hosts listed here:
+
+  | Phase | Allowed |
+  |-------|---------|
+  | checkout | `git fetch` of the one repository under review |
+  | scan | GET from the Trivy DB mirrors |
+  | agent | `api.anthropic.com` or `api.openai.com` only |
+  | otherwise | nothing |
+
+- **Secrets never enter the container.**
+  - The container holds placeholder credentials; `Outbound` adds the real
+    GitHub token or model key to the outgoing request.
+  - The GitHub token used for checkout is read-only and scoped to the single
+    repository.
+  - The agent runs with no GitHub token at all.
+- The agent runs outside the checkout, so the repository's own agent config
+  (`CLAUDE.md`, `AGENTS.md`, `.claude/` hooks, `.mcp.json`) is never loaded.
+  Gitleaks runs with its pinned default config, not the repository's.
+- The agent can only write a JSON report. The engine validates it with zod
+  and posts it; the agent has no route to GitHub.
+- PR text is placed in the prompt inside a delimited block marked as
+  untrusted, and is sanitized again before anything is posted back to GitHub.
+
+### Agent credentials (bring your own)
+
+In **Settings → AI agents**, each user saves one of these:
+
+| Credential | Agent | How to get it |
+|------------|-------|---------------|
+| Claude subscription token | Claude Code | `claude setup-token` |
+| Anthropic API key | Claude Code | console.anthropic.com |
+| OpenAI API key | Codex | platform.openai.com |
+
+Credentials are encrypted at rest with AES-256-GCM using `CREDENTIALS_KEY`, and
+the row id is bound in as additional data. Only the engine decrypts them, at
+the moment a review starts. A repository's reviews use its owner's credential.
+
+> **Hosted deployments:** check your model provider's terms before letting
+> users connect *subscription* tokens to a service you operate. API keys are
+> the safe default for a multi-tenant cloud. Self-hosters using their own
+> subscription for their own repositories are the intended case.
+
+## Self-hosting
+
+Requires the Workers Paid plan ($5/mo) for Containers. Docker is needed
+locally to build the container image.
+
+### 1. Provision
 
 ```bash
-# Clone and install
 git clone https://github.com/Buddhsen-tripathi/openvscan.git
-cd openvscan
-pnpm install
+cd openvscan && pnpm install
 
-# Authenticate and provision Cloudflare resources (first time only)
 pnpm --filter openvscan-web exec wrangler login
 pnpm --filter openvscan-web exec wrangler d1 create openvscan
 pnpm --filter openvscan-web exec wrangler r2 bucket create openvscan-artifacts
-pnpm --filter openvscan-web exec wrangler queues create openvscan-scans
-# → copy the printed D1 database_id into web/wrangler.jsonc and workers/wrangler.jsonc
-
-# Apply the schema to your local D1, then start the web app
-pnpm db:migrate:local
-pnpm dev:web
+# Put the D1 database_id in web/wrangler.jsonc and engine/wrangler.jsonc
 ```
 
-The web app runs at http://localhost:3000.
+### 2. Register a GitHub App
 
-### Environment
-
-Bindings (D1, R2, Queue) live in `wrangler.jsonc`, not `.env`. Provide secrets for local dev in `web/.dev.vars`:
-
-```env
-BETTER_AUTH_SECRET="generate-a-random-32-char-secret"
-BETTER_AUTH_URL=http://localhost:3000
-VITE_APP_URL=http://localhost:3000
-```
-
-Generate a secret with `openssl rand -base64 32`.
-
-### GitHub integration
-
-OpenVScan connects to GitHub through a **GitHub App** (repo access, push webhooks, PR
-comments) plus an OAuth client (for "Continue with GitHub" login). The GitHub features are
-optional — without them, manual project scans still work.
-
-**1. Register a GitHub App** (Settings → Developer settings → GitHub Apps → New):
+Go to GitHub → Settings → Developer settings → GitHub Apps → New.
 
 | Setting | Value |
 |---------|-------|
-| Webhook URL | `https://<your-web-origin>/api/github/webhook` |
-| Setup URL (callback) | `https://<your-web-origin>/api/github/setup` (check "Redirect on update") |
-| Webhook secret | a random string (becomes `GITHUB_WEBHOOK_SECRET`) |
-| Permissions | **Contents:** read, **Pull requests:** read & write, **Metadata:** read |
-| Subscribe to events | **Push**, **Pull request**, **Installation**, **Installation repositories** |
+| Webhook URL | `https://<web-origin>/api/github/webhook` |
+| Setup URL | `https://<web-origin>/api/github/setup` (enable "Redirect on update") |
+| Webhook secret | random string → `GITHUB_WEBHOOK_SECRET` |
+| Repository permissions | **Checks**: read & write · **Pull requests**: read & write · **Contents**: read · **Metadata**: read |
+| Organization permissions | **Members**: read (lets org admins connect an org installation) |
+| Account permissions | **Email addresses**: read (for "Continue with GitHub") |
+| Events | **Pull request**, **Check run**, **Repository** (installation events are sent automatically) |
 
-Generate a private key for the App (downloads a `.pem`). The App's **App ID**, **slug**
-(from its public page URL), **Client ID/secret**, and the private key feed the secrets below.
+Generate a private key (`.pem`) and a client secret. The App's own OAuth
+client ID/secret power "Continue with GitHub", which is also how OpenVScan
+verifies who may connect an installation, so set its callback URL to
+`https://<web-origin>/api/auth/callback/github`.
 
-**2. Provide secrets.** Locally, copy `web/.dev.vars.example` → `web/.dev.vars` and
-`workers/.dev.vars.example` → `workers/.dev.vars` and fill them in. In production:
+### 3. Secrets
+
+Generate one encryption key and give the **same value** to both Workers:
 
 ```bash
-# Web Worker
-for s in GITHUB_APP_ID GITHUB_APP_SLUG GITHUB_APP_PRIVATE_KEY GITHUB_WEBHOOK_SECRET \
-         GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET; do
-  pnpm --filter openvscan-web exec wrangler secret put "$s"
-done
-
-# Scanner Worker
-for s in GITHUB_APP_ID GITHUB_APP_PRIVATE_KEY APP_URL; do
-  pnpm --filter openvscan-workers exec wrangler secret put "$s"
-done
+openssl rand -base64 32
 ```
 
-**3. Use it.** Sign in → **Repositories** → install the App on the repos you want → connect a
-repo → set its trigger to **Automatic** with an optional branch filter. On a matching push,
-OpenVScan scans the repo and (when the branch has an open PR) posts a findings summary comment.
+| Worker | Secrets |
+|--------|---------|
+| web (`openvscan-web`) | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `VITE_APP_URL`, `CREDENTIALS_KEY`, `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` |
+| engine (`openvscan-engine`) | `CREDENTIALS_KEY`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` (and set the `APP_URL` var in `engine/wrangler.jsonc`) |
 
-For local webhook testing, forward GitHub deliveries to your dev server with a tunnel (e.g.
-[smee.io](https://smee.io) or `cloudflared tunnel`) pointed at `localhost:3000/api/github/webhook`.
-
-### First Run
-
-1. Go to http://localhost:3000/signup and create an account.
-2. Create a project from the dashboard.
-3. Start a scan from the project page (target = a repo URL, container image, or path).
-4. Open the scan detail page to view status, findings, logs, and exports.
-
-> Local scan **execution** requires the scanner Worker (and Docker, for the container). Without it, scans queue but stay pending. See **Deployment**.
-
-## Features
-
-### Current
-- ✅ Email/password **and GitHub** authentication (Better-auth on D1)
-- ✅ Multi-tenant project management
-- ✅ **GitHub App integration**: connect repos, scan automatically on push, post findings to the PR
-- ✅ Async vulnerability scanning with Trivy (dependencies, container images, repos)
-- ✅ Findings grouped by severity with remediation guidance
-- ✅ Scan execution logs and status polling
-- ✅ Scan cancellation (DB-flag based)
-- ✅ JSON & SARIF export
-- ✅ Raw scanner artifacts stored in R2
-
-### Planned
-- 🔜 Additional scanners (Nmap, Semgrep, OWASP ZAP)
-- 🔜 AI-assisted triage in the consumer Worker
-- 🔜 Inline PR review comments (per-line) + Checks API
-- 🔜 GitLab support
-- 🔜 Scheduled scans and baselines
-- 🔜 Team collaboration
-
-## Repository Structure
-
+```bash
+pnpm --filter openvscan-engine exec wrangler secret put CREDENTIALS_KEY
+pnpm --filter openvscan-web exec wrangler secret put CREDENTIALS_KEY
+# …and the rest from the table
 ```
-openvscan/
-├── web/                   # TanStack Start app on Cloudflare Workers
-│   ├── src/routes/        # routes incl. api/auth/$ and api/scans.$id.export
-│   ├── components/        # auth/, dashboard/, homepage/, ui/
-│   ├── lib/               # auth.ts, db.ts, server.ts (server functions), api.ts
-│   └── wrangler.jsonc     # bindings: DB (D1), ARTIFACTS (R2), SCAN_QUEUE
-├── workers/               # Cloudflare consumer Worker (openvscan-scanner)
-│   ├── src/index.ts       # ScannerContainer + queue() handler
-│   ├── container/         # Dockerfile (node + Trivy) + server.mjs
-│   └── wrangler.jsonc     # queue consumer + D1 + R2 + Container bindings
-├── packages/
-│   ├── db/                # Drizzle SQLite schema for D1 + migrations
-│   └── types/             # Shared TypeScript types & enums
-└── package.json           # Root scripts
+
+Verification and password-reset email go through Cloudflare Email Service.
+Enable sending for your domain (`wrangler email sending enable <domain>`) and
+set `EMAIL_FROM` in `web/wrangler.jsonc` to an address on it. Without email,
+password reset is unavailable.
+
+### 4. Deploy
+
+```bash
+pnpm db:migrate   # apply D1 migrations (remote)
+pnpm run deploy   # engine first (builds + pushes the image), then web
 ```
+
+The web Worker's `ENGINE` service binding requires the engine to exist, so
+deploy the engine first.
+
+> **Upgrading from the old scanner (pre-PR-review versions):** migration
+> `0002_pr_review_pipeline` drops the old `project`, `scan`, `finding` and
+> `scan_log` tables (connected repositories are kept). Export anything you
+> need first. The old `openvscan-scanner` Worker and `openvscan-scans` queue
+> are no longer used and can be deleted.
 
 ## Development
 
-### Prerequisites
-- Node.js 22.12+
-- pnpm 8+
-- A Cloudflare account (Workers Paid for the scanner container)
-- Docker (only to build/run the scanner container)
-
-### Commands
-
 ```bash
-# Develop
-pnpm dev:web                       # web Worker (local D1/R2/Queue via vite plugin)
-pnpm --filter openvscan-workers dev  # scanner Worker (needs Docker)
-
-# Build
-pnpm prebuild                      # build shared packages
-pnpm build                         # build the web Worker
-
-# Database (D1)
-pnpm db:generate                   # generate SQLite migrations from the schema
-pnpm db:migrate:local              # apply to local D1
-pnpm db:migrate                    # apply to remote D1
+cp web/.dev.vars.example web/.dev.vars          # same CREDENTIALS_KEY in both
+cp engine/.dev.vars.example engine/.dev.vars
+pnpm db:migrate:local
+pnpm dev:engine      # http://localhost:8787 (needs Docker)
+pnpm dev:web         # http://localhost:3000, binds to the local engine
 ```
 
-## Deployment
+Both Workers share the local D1/R2 state in `web/.wrangler/state`.
 
-Everything deploys to Cloudflare.
+To receive real webhooks locally, expose port 3000 with a tunnel such as
+`cloudflared tunnel --url http://localhost:3000` and point the App's webhook
+URL at it.
+
+The engine has dev-only routes for exercising the sandbox without GitHub.
+They are enabled with `--var DEV_ROUTES:true`:
 
 ```bash
-# 1. Apply migrations to remote D1
-pnpm db:migrate
-
-# 2. Deploy the scanner Worker (builds + pushes the container image — Docker required)
-pnpm --filter openvscan-workers deploy
-
-# 3. Deploy the web Worker
-pnpm deploy
-
-# 4. Set production secrets on the web Worker
-pnpm --filter openvscan-web exec wrangler secret put BETTER_AUTH_SECRET
-# also set BETTER_AUTH_URL / VITE_APP_URL to the deployed origin, then redeploy
+# clone a public repo through the egress proxy and run every scanner
+curl -X POST localhost:8787/__dev/scan  -d '{"repo":"OWASP/NodeGoat"}'
+# start an agent with a credential and report how it exited
+curl -X POST localhost:8787/__dev/agent -d '{"kind":"anthropic_api_key","secret":"sk-ant-…"}'
 ```
 
-## Documentation
+| Command | |
+|---------|--|
+| `pnpm typecheck` | all packages |
+| `pnpm test` | engine unit tests (scanner parsers, diff mapping, report, crypto) |
+| `pnpm lint` | Biome (web) |
+| `pnpm db:generate` | Drizzle migration from schema changes |
 
-- **[AGENTS.MD](AGENTS.MD)** — architecture context for AI agents
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** — contribution guidelines
-- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** — community standards
+## Licensing notes
+
+OpenVScan is AGPL-3.0-only. The container bundles third-party tools under
+their own licenses: Trivy (Apache-2.0), Gitleaks (MIT), Opengrep
+(LGPL-2.1), and Claude Code and Codex (under their vendors' terms).
+
+The bundled rules have their own terms:
+- **opengrep-rules** is LGPL-2.1 with the Commons Clause. Review that before
+  selling a hosted service built on it.
+- **Semgrep's registry rules** do not permit this kind of use, so they are
+  not included.
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run lint and build
-5. Submit a pull request
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and
+[AGENTS.MD](AGENTS.MD) for architecture notes.
 
 ## License
 
-Licensed under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE) for details.
-
-## Acknowledgements
-
-OpenVScan builds on trusted open-source security tools:
-- [Trivy](https://github.com/aquasecurity/trivy) — container, filesystem & repository scanning
-- [OWASP ZAP](https://www.zaproxy.org/) — DAST scanning (planned)
-- [Nmap](https://nmap.org/) — network scanning (planned)
-- [Semgrep](https://semgrep.dev/) — static analysis (planned)
+GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
 
 ---
 
-**Made by [Buddhsen Tripathi](https://github.com/Buddhsen-tripathi)**
-
-For questions or support, please [open an issue](https://github.com/Buddhsen-tripathi/openvscan/issues).
+**Made by [Buddhsen Tripathi](https://github.com/Buddhsen-tripathi)** · [Open an issue](https://github.com/Buddhsen-tripathi/openvscan/issues)
