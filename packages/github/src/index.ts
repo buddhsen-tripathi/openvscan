@@ -3,11 +3,13 @@ import { verify } from "@octokit/webhooks-methods";
 import { Octokit } from "octokit";
 
 /**
- * Shared GitHub helpers for OpenVScan. Used by both the web Worker (webhook
- * handling, repo listing, install setup) and the scanner Worker (authenticated
- * clones, posting PR comments). Everything runs on the Cloudflare Workers
- * runtime via native fetch + Web Crypto.
+ * GitHub App helpers shared by the web Worker (webhooks, install setup, repo
+ * listing) and the engine Worker (scoped clone tokens, Check Runs, PR reviews,
+ * sticky summary comments). Everything runs on the Workers runtime via fetch +
+ * Web Crypto.
  */
+
+export type { Octokit };
 
 export interface AppCredentials {
   appId: string;
@@ -16,6 +18,46 @@ export interface AppCredentials {
 
 export interface InstallationCredentials extends AppCredentials {
   installationId: string;
+}
+
+/** DER length prefix (short or long form). */
+function derLength(n: number): number[] {
+  if (n < 0x80) return [n];
+  const bytes: number[] = [];
+  for (let v = n; v > 0; v >>= 8) bytes.unshift(v & 0xff);
+  return [0x80 | bytes.length, ...bytes];
+}
+
+function pem(label: string, der: Uint8Array): string {
+  let bin = "";
+  for (const b of der) bin += String.fromCharCode(b);
+  const lines = btoa(bin).match(/.{1,64}/g) ?? [];
+  return `-----BEGIN ${label}-----\n${lines.join("\n")}\n-----END ${label}-----\n`;
+}
+
+/**
+ * Normalise the GitHub App private key to PKCS#8 PEM.
+ *
+ * GitHub issues PKCS#1 keys ("BEGIN RSA PRIVATE KEY"), but the JWT signer
+ * uses WebCrypto on Workers, which only imports PKCS#8. Also tolerates keys
+ * stored with escaped newlines or squashed onto one line.
+ */
+export function normalizePrivateKey(raw: string): string {
+  const text = raw.replace(/\\n/g, "\n").trim();
+  const m = /-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/.exec(text);
+  if (!m) return text;
+  const label = m[1]!;
+  const body = m[2]!.replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
+  if (label !== "RSA PRIVATE KEY") return pem(label, der);
+
+  // PrivateKeyInfo ::= SEQUENCE { version 0, AlgorithmIdentifier rsaEncryption, OCTET STRING pkcs1 }
+  const algorithm = [
+    0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
+  ];
+  const octet = [0x04, ...derLength(der.length), ...der];
+  const inner = [0x02, 0x01, 0x00, ...algorithm, ...octet];
+  return pem("PRIVATE KEY", Uint8Array.from([0x30, ...derLength(inner.length), ...inner]));
 }
 
 /** Octokit authenticated as the GitHub App itself (JWT) — for app-level calls. */
@@ -38,18 +80,30 @@ export function installationOctokit(creds: InstallationCredentials): Octokit {
   });
 }
 
-/** Mint a raw installation access token (used to build an authenticated clone URL). */
-export async function getInstallationToken(
+/**
+ * Mint a short-lived installation token scoped to ONE repository with
+ * read-only contents access. This is what the sandbox egress proxy uses to
+ * clone — even if it leaked it could only read that one repo for ~1 hour.
+ */
+export async function createReadOnlyRepoToken(
   creds: InstallationCredentials,
+  repoName: string,
 ): Promise<string> {
-  const octokit = installationOctokit(creds);
-  const auth = (await octokit.auth({ type: "installation" })) as {
-    token: string;
-  };
-  return auth.token;
+  const octokit = appOctokit(creds);
+  const { data } = await octokit.request(
+    "POST /app/installations/{installation_id}/access_tokens",
+    {
+      installation_id: Number(creds.installationId),
+      repositories: [repoName],
+      permissions: { contents: "read", metadata: "read" },
+    },
+  );
+  return data.token;
 }
 
 export interface InstallationAccount {
+  /** GitHub's numeric account id, as a string. */
+  id: string;
   login: string;
   type: "User" | "Organization";
 }
@@ -63,9 +117,11 @@ export async function getInstallationAccount(
     "GET /app/installations/{installation_id}",
     { installation_id: Number(installationId) },
   );
-  const account = data.account as { login: string; type?: string } | null;
+  const account = data.account as { id: number; login: string; type?: string } | null;
+  if (!account) throw new Error(`Installation ${installationId} has no account`);
   return {
-    login: account?.login ?? "unknown",
+    id: String(account.id),
+    login: account.login,
     type: account?.type === "Organization" ? "Organization" : "User",
   };
 }
@@ -94,35 +150,18 @@ export async function listInstallationRepos(
   }));
 }
 
-/** Return the number of an open PR whose head is `branch`, or null. */
-export async function findOpenPrForBranch(
+/** Resolve a branch to its head commit sha. */
+export async function getBranchHeadSha(
   octokit: Octokit,
   owner: string,
   repo: string,
   branch: string,
-): Promise<number | null> {
-  const { data } = await octokit.request("GET /repos/{owner}/{repo}/pulls", {
-    owner,
-    repo,
-    state: "open",
-    head: `${owner}:${branch}`,
-    per_page: 1,
-  });
-  return data[0]?.number ?? null;
-}
-
-/** Post a top-level comment on a pull request (PRs are issues to this API). */
-export async function postPrComment(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  body: string,
-): Promise<void> {
-  await octokit.request(
-    "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
-    { owner, repo, issue_number: prNumber, body },
+): Promise<string> {
+  const { data } = await octokit.request(
+    "GET /repos/{owner}/{repo}/commits/{ref}",
+    { owner, repo, ref: `heads/${branch}` },
   );
+  return data.sha;
 }
 
 /** Verify a GitHub webhook's `X-Hub-Signature-256` against the shared secret. */
@@ -134,94 +173,206 @@ export function verifyWebhookSignature(
   return verify(secret, payload, signature);
 }
 
-/** Clone URL with an installation token embedded (for private repos). */
-export function authenticatedCloneUrl(
-  owner: string,
-  repo: string,
-  token: string,
-): string {
-  return `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-}
+/* ------------------------------- Check Runs ------------------------------ */
 
-export interface CommentFinding {
+export const CHECK_NAME = "OpenVScan Security Review";
+
+export interface CheckAnnotation {
+  path: string;
+  start_line: number;
+  end_line: number;
+  annotation_level: "notice" | "warning" | "failure";
   title: string;
-  severity: string;
-  tool: string;
-  location?: string | null;
+  message: string;
 }
 
-const SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"] as const;
-const SEVERITY_EMOJI: Record<string, string> = {
-  critical: "🔴",
-  high: "🟠",
-  medium: "🟡",
-  low: "🔵",
-  info: "⚪",
-};
+export async function createCheckRun(
+  octokit: Octokit,
+  opts: {
+    owner: string;
+    repo: string;
+    headSha: string;
+    externalId: string;
+    detailsUrl: string;
+  },
+): Promise<string> {
+  const { data } = await octokit.request("POST /repos/{owner}/{repo}/check-runs", {
+    owner: opts.owner,
+    repo: opts.repo,
+    name: CHECK_NAME,
+    head_sha: opts.headSha,
+    external_id: opts.externalId,
+    details_url: opts.detailsUrl,
+    status: "in_progress",
+    started_at: new Date().toISOString(),
+    output: {
+      title: "Security review in progress",
+      summary: "Running scanners and the AI reviewer on this commit…",
+    },
+  });
+  return String(data.id);
+}
 
-/** Build the markdown body posted as the PR findings summary. */
-export function buildFindingsComment(opts: {
-  scanId: string;
-  repoFullName: string;
-  branch: string;
-  commitSha: string;
-  findings: CommentFinding[];
-  appUrl: string;
-}): string {
-  const { scanId, repoFullName, branch, commitSha, findings, appUrl } = opts;
-  const counts = new Map<string, number>();
-  for (const f of findings) {
-    const s = f.severity.toLowerCase();
-    counts.set(s, (counts.get(s) ?? 0) + 1);
+/**
+ * Complete a Check Run. GitHub accepts at most 50 annotations per request, so
+ * extra annotations are appended with follow-up PATCHes.
+ */
+export async function completeCheckRun(
+  octokit: Octokit,
+  opts: {
+    owner: string;
+    repo: string;
+    checkRunId: string;
+    conclusion: "success" | "failure" | "neutral" | "cancelled";
+    title: string;
+    summary: string;
+    text?: string;
+    annotations?: CheckAnnotation[];
+  },
+): Promise<void> {
+  const annotations = opts.annotations ?? [];
+  const batches: CheckAnnotation[][] = [];
+  for (let i = 0; i < annotations.length; i += 50) {
+    batches.push(annotations.slice(i, i + 50));
+  }
+  const clip = (s: string) => (s.length > 65_000 ? `${s.slice(0, 64_990)}\n…` : s);
+
+  await octokit.request("PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}", {
+    owner: opts.owner,
+    repo: opts.repo,
+    check_run_id: Number(opts.checkRunId),
+    status: "completed",
+    conclusion: opts.conclusion,
+    completed_at: new Date().toISOString(),
+    output: {
+      title: opts.title,
+      summary: clip(opts.summary),
+      text: opts.text ? clip(opts.text) : undefined,
+      annotations: batches[0],
+    },
+  });
+  for (const batch of batches.slice(1)) {
+    await octokit.request("PATCH /repos/{owner}/{repo}/check-runs/{check_run_id}", {
+      owner: opts.owner,
+      repo: opts.repo,
+      check_run_id: Number(opts.checkRunId),
+      output: { title: opts.title, summary: clip(opts.summary), annotations: batch },
+    });
+  }
+}
+
+/* ------------------------------- PR reviews ------------------------------ */
+
+export interface ReviewComment {
+  path: string;
+  /** Line in the PR head version of the file (RIGHT side). */
+  line: number;
+  /** For multi-line comments. Must be < line. */
+  start_line?: number;
+  body: string;
+}
+
+/**
+ * Post a COMMENT review with inline comments. If GitHub rejects the inline
+ * comments (422 — e.g. a line isn't part of the diff), retry once with the
+ * body only so the summary still lands. Returns the review id.
+ */
+export async function createReview(
+  octokit: Octokit,
+  opts: {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    commitSha: string;
+    body: string;
+    comments: ReviewComment[];
+  },
+): Promise<{ id: string; inlineDropped: boolean }> {
+  const comments = opts.comments.map((c) => ({
+    path: c.path,
+    line: c.line,
+    side: "RIGHT" as const,
+    ...(c.start_line && c.start_line < c.line
+      ? { start_line: c.start_line, start_side: "RIGHT" as const }
+      : {}),
+    body: c.body,
+  }));
+  const send = (withComments: boolean) =>
+    octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews", {
+      owner: opts.owner,
+      repo: opts.repo,
+      pull_number: opts.prNumber,
+      commit_id: opts.commitSha,
+      event: "COMMENT",
+      body: opts.body,
+      comments: withComments ? comments : undefined,
+    });
+  try {
+    const { data } = await send(comments.length > 0);
+    return { id: String(data.id), inlineDropped: false };
+  } catch (err) {
+    if (comments.length > 0 && (err as { status?: number }).status === 422) {
+      const { data } = await send(false);
+      return { id: String(data.id), inlineDropped: true };
+    }
+    throw err;
+  }
+}
+
+/** Marker used to find (and only ever edit) our own sticky summary comment. */
+export const SUMMARY_MARKER = "<!-- openvscan:summary -->";
+
+/**
+ * Create or update the single OpenVScan summary comment on a PR. Prefers the
+ * known comment id; falls back to searching for the marker (e.g. after the
+ * stored id was lost), and creates a new comment if neither exists.
+ */
+export async function upsertSummaryComment(
+  octokit: Octokit,
+  opts: {
+    owner: string;
+    repo: string;
+    prNumber: number;
+    body: string;
+    knownCommentId?: string | null;
+    /** Only adopt an existing marker comment posted by this GitHub App. */
+    appId: string | number;
+  },
+): Promise<string> {
+  const body = `${SUMMARY_MARKER}\n${opts.body}`;
+  const update = async (id: string) => {
+    await octokit.request("PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}", {
+      owner: opts.owner,
+      repo: opts.repo,
+      comment_id: Number(id),
+      body,
+    });
+    return id;
+  };
+
+  if (opts.knownCommentId) {
+    try {
+      return await update(opts.knownCommentId);
+    } catch (err) {
+      if ((err as { status?: number }).status !== 404) throw err;
+    }
   }
 
-  const shortSha = commitSha.slice(0, 7);
-  const scanUrl = `${appUrl.replace(/\/$/, "")}/dashboard/scans/${scanId}`;
+  const existing = await octokit.paginate(
+    "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+    { owner: opts.owner, repo: opts.repo, issue_number: opts.prNumber, per_page: 100 },
+  );
+  // Anyone can paste the marker into a comment; only adopt our App's own.
+  const ours = existing.find(
+    (c) =>
+      String(c.performed_via_github_app?.id) === String(opts.appId) &&
+      c.body?.startsWith(SUMMARY_MARKER),
+  );
+  if (ours) return update(String(ours.id));
 
-  if (findings.length === 0) {
-    return [
-      "## 🛡️ OpenVScan — no vulnerabilities found",
-      "",
-      `Scanned \`${repoFullName}\` @ \`${shortSha}\` (\`${branch}\`).`,
-      "",
-      `[View scan →](${scanUrl})`,
-    ].join("\n");
-  }
-
-  const summaryLine = SEVERITY_ORDER.filter((s) => counts.get(s))
-    .map((s) => `${SEVERITY_EMOJI[s]} **${counts.get(s)}** ${s}`)
-    .join(" · ");
-
-  const top = [...findings]
-    .sort(
-      (a, b) =>
-        SEVERITY_ORDER.indexOf(a.severity.toLowerCase() as never) -
-        SEVERITY_ORDER.indexOf(b.severity.toLowerCase() as never),
-    )
-    .slice(0, 10);
-
-  const rows = top
-    .map((f) => {
-      const sev = f.severity.toLowerCase();
-      const loc = f.location ? `\`${f.location}\`` : "—";
-      return `| ${SEVERITY_EMOJI[sev] ?? ""} ${sev} | ${f.title.replace(/\|/g, "\\|")} | ${f.tool} | ${loc} |`;
-    })
-    .join("\n");
-
-  return [
-    `## 🛡️ OpenVScan — ${findings.length} finding${findings.length === 1 ? "" : "s"}`,
-    "",
-    `Scanned \`${repoFullName}\` @ \`${shortSha}\` (\`${branch}\`).`,
-    "",
-    summaryLine,
-    "",
-    "| Severity | Finding | Tool | Location |",
-    "| --- | --- | --- | --- |",
-    rows,
-    "",
-    findings.length > top.length
-      ? `_…and ${findings.length - top.length} more._\n`
-      : "",
-    `[View full scan →](${scanUrl})`,
-  ].join("\n");
+  const { data } = await octokit.request(
+    "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
+    { owner: opts.owner, repo: opts.repo, issue_number: opts.prNumber, body },
+  );
+  return String(data.id);
 }

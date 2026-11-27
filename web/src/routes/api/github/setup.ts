@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireUserId } from "@/lib/db";
-import { syncInstallation } from "@/lib/github";
+import { InstallationAccessError, syncInstallation } from "@/lib/github";
+import { requireUserId } from "@/lib/user";
 
 /**
  * GitHub redirects here after the user installs (or reconfigures) the App.
@@ -35,10 +35,14 @@ export const Route = createFileRoute("/api/github/setup")({
 
         try {
           await syncInstallation(userId, installationId);
-        } catch (e) {
-          const message = e instanceof Error ? e.message : "setup_failed";
+        } catch (err) {
+          if (!(err instanceof InstallationAccessError)) {
+            console.error("GitHub App setup failed", err);
+          }
+          const code =
+            err instanceof InstallationAccessError ? err.code : "failed";
           return Response.redirect(
-            `${url.origin}/dashboard/repositories?error=${encodeURIComponent(message)}`,
+            `${url.origin}/dashboard/repositories?error=${code}`,
             302,
           );
         }
