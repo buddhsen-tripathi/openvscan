@@ -10,7 +10,7 @@
   "vars": {
     "VITE_APP_URL": "https://openvscan.com",
     "BETTER_AUTH_URL": "https://openvscan.com",
-    "EMAIL_FROM": "noreply@openvscan.com"
+    "EMAIL_FROM": "no-reply@openvscan.com"
   },
   // Verification and password-reset email (Cloudflare Email Service).
   "send_email": [{ "name": "EMAIL" }],
