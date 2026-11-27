@@ -5,13 +5,24 @@ BETTER_AUTH_SECRET="generate-a-random-32-char-secret"
 BETTER_AUTH_URL=http://localhost:3000
 VITE_APP_URL=http://localhost:3000
 
-# --- GitHub integration (optional; enables repo connect + auto-scan) ---
-# From your GitHub App settings page. The private key is the .pem contents;
-# either paste it with real newlines or with escaped "\n" — both work.
+# 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts the AI agent
+# credentials users save in Settings → AI agents. MUST be the same value in
+# engine/.dev.vars (the engine decrypts them at run time). Rotating it makes
+# saved credentials unreadable — users would have to paste them again.
+CREDENTIALS_KEY=
+
+# --- GitHub App (enables repo connect + PR reviews) ---
+# Repository:   Checks (read & write), Pull requests (read & write),
+#               Contents (read), Metadata (read)
+# Organization: Members (read): lets org admins connect an org installation
+# Account:      Email addresses (read): for "Continue with GitHub"
+# Events:       Pull request, Check run, Repository
+# Webhook URL: <origin>/api/github/webhook   Setup URL: <origin>/api/github/setup
+# The private key is the .pem contents; real newlines or escaped "\n" both work.
 GITHUB_APP_ID=
 GITHUB_APP_SLUG=
 GITHUB_APP_PRIVATE_KEY=
 GITHUB_WEBHOOK_SECRET=
-# OAuth client (for "Continue with GitHub" social login). Can be the same App.
+# The GitHub App's own OAuth client id/secret ("Continue with GitHub").
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=

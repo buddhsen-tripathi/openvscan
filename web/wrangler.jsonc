@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "openvscan-web",
-  "compatibility_date": "2026-06-09",
+  "compatibility_date": "2026-11-27",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
   "observability": {
@@ -9,8 +9,11 @@
   },
   "vars": {
     "VITE_APP_URL": "https://openvscan.com",
-    "BETTER_AUTH_URL": "https://openvscan.com"
+    "BETTER_AUTH_URL": "https://openvscan.com",
+    "EMAIL_FROM": "noreply@openvscan.com"
   },
+  // Verification and password-reset email (Cloudflare Email Service).
+  "send_email": [{ "name": "EMAIL" }],
   "d1_databases": [
     {
       "binding": "DB",
@@ -25,12 +28,13 @@
       "bucket_name": "openvscan-artifacts"
     }
   ],
-  "queues": {
-    "producers": [
-      {
-        "binding": "SCAN_QUEUE",
-        "queue": "openvscan-scans"
-      }
-    ]
-  }
+  // RPC into the engine Worker (ReviewWorkflow + scanner/agent sandboxes).
+  // The web Worker creates `run` rows and hands their ids to ENGINE.startRun.
+  "services": [
+    {
+      "binding": "ENGINE",
+      "service": "openvscan-engine",
+      "entrypoint": "EngineApi"
+    }
+  ]
 }

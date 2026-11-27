@@ -1,20 +1,17 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "@/components/AppLink";
-import {
-  AuthError,
-  AuthShell,
-  AuthSuccess,
-  PasswordField,
-} from "@/components/auth/AuthShell";
+import { AuthShell, PasswordField } from "@/components/auth/AuthShell";
+import { Notice } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/Input";
 import { resetPassword } from "@/lib/auth-client";
-import { getSession } from "@/src/lib/session";
+import { isSignedIn } from "@/src/lib/session";
 
 export const Route = createFileRoute("/reset-password")({
   // Already signed in? Send them to the dashboard rather than the reset form.
   beforeLoad: async () => {
-    if (await getSession()) {
+    if (await isSignedIn()) {
       throw redirect({ to: "/dashboard" });
     }
   },
@@ -24,9 +21,7 @@ export const Route = createFileRoute("/reset-password")({
 function InvalidLink({ title, message }: { title: string; message: string }) {
   return (
     <div className="text-center">
-      <h2 className="mb-2 font-serif text-lg font-semibold text-destructive">
-        {title}
-      </h2>
+      <h2 className="mb-2 font-display text-lg text-destructive">{title}</h2>
       <p className="mb-6 text-sm text-muted-foreground">{message}</p>
       <Button asChild size="lg" className="w-full">
         <Link href="/forgot-password">Request new link</Link>
@@ -45,6 +40,12 @@ function ResetPasswordContent() {
   const navigate = useNavigate();
   const search = Route.useSearch() as { token?: string; error?: string };
   const token = search.token;
+
+  useEffect(() => {
+    if (!success) return;
+    const t = setTimeout(() => navigate({ to: "/signin" }), 2000);
+    return () => clearTimeout(t);
+  }, [success, navigate]);
 
   if (search.error === "INVALID_TOKEN") {
     return (
@@ -85,7 +86,6 @@ function ResetPasswordContent() {
               onSuccess: () => {
                 setLoading(false);
                 setSuccess(true);
-                setTimeout(() => navigate({ to: "/signin" }), 2000);
               },
               onError: (ctx) => {
                 setLoading(false);
@@ -99,15 +99,14 @@ function ResetPasswordContent() {
         }
       }}
     >
-      {error && <AuthError message={error} />}
+      {error && <Notice tone="danger">{error}</Notice>}
       {success && (
-        <AuthSuccess message="Password reset successfully! Redirecting…" />
+        <Notice tone="success">
+          Password reset successfully! Redirecting…
+        </Notice>
       )}
 
-      <div className="space-y-1.5">
-        <label className="text-sm font-medium text-foreground" htmlFor="password">
-          New password
-        </label>
+      <Field label="New password" htmlFor="password">
         <PasswordField
           id="password"
           required
@@ -117,15 +116,9 @@ function ResetPasswordContent() {
           show={showPassword}
           onToggle={() => setShowPassword((v) => !v)}
         />
-      </div>
+      </Field>
 
-      <div className="space-y-1.5">
-        <label
-          className="text-sm font-medium text-foreground"
-          htmlFor="confirm"
-        >
-          Confirm password
-        </label>
+      <Field label="Confirm password" htmlFor="confirm">
         <PasswordField
           id="confirm"
           required
@@ -135,7 +128,7 @@ function ResetPasswordContent() {
           show={showPassword}
           onToggle={() => setShowPassword((v) => !v)}
         />
-      </div>
+      </Field>
 
       <Button
         type="submit"
@@ -153,17 +146,11 @@ function ResetPasswordPage() {
   return (
     <AuthShell
       title="Set a new password"
-      footer={
-        <>
-          Remember your password?{" "}
-          <Link
-            href="/signin"
-            className="font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            Sign in
-          </Link>
-        </>
-      }
+      footer={{
+        prompt: "Remember your password?",
+        href: "/signin",
+        label: "Sign in",
+      }}
     >
       <ResetPasswordContent />
     </AuthShell>
