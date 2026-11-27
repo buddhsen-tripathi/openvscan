@@ -1,18 +1,21 @@
 import {
   appOctokit,
   getInstallationAccount,
+  type InstallationAccount,
   type InstallationRepo,
   installationOctokit,
   listInstallationRepos,
+  normalizePrivateKey,
 } from "@openvscan/github";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/src/lib/env";
 
 /**
  * Server-side GitHub App glue shared by the webhook/setup routes and the
- * dashboard server functions. Wraps the provider-agnostic helpers in
- * `@openvscan/github` with OpenVScan's env + D1 persistence.
+ * dashboard server functions. Wraps the helpers in `@openvscan/github` with
+ * OpenVScan's env + D1 persistence.
  */
 
 export function isGithubConfigured(): boolean {
@@ -25,9 +28,7 @@ export function getAppCreds() {
   if (!appId || !rawKey) {
     throw new Error("GitHub App is not configured");
   }
-  // Secrets set via `wrangler secret put` keep real newlines; .dev.vars often
-  // stores the PEM with escaped "\n" — normalise both to a valid key.
-  return { appId, privateKey: rawKey.replace(/\\n/g, "\n") };
+  return { appId, privateKey: normalizePrivateKey(rawKey) };
 }
 
 /** Public install URL for the GitHub App (or null when the slug is unset). */
@@ -36,46 +37,104 @@ export function installUrl(): string | null {
   return slug ? `https://github.com/apps/${slug}/installations/new` : null;
 }
 
+/** Why an installation can't be connected; the code is shown on the page. */
+export class InstallationAccessError extends Error {
+  constructor(
+    readonly code: "invalid" | "github_not_linked" | "not_admin" | "taken",
+  ) {
+    super(code);
+  }
+}
+
+/** The signed-in user's GitHub token (decrypted and refreshed by Better Auth). */
+export async function githubUserToken(userId: string): Promise<string | null> {
+  try {
+    const { accessToken } = await getAuth().api.getAccessToken({
+      body: { providerId: "github", userId },
+    });
+    return accessToken ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Upsert the installation row for `installationId`, associating it with the
- * user who just completed the App install. Returns the stored row.
+ * Prove the signed-in user administers the installation's account before we
+ * bind it to them. The setup redirect's `installation_id` is user-controlled,
+ * so without this anyone could claim someone else's installation.
+ *  - Personal account: the user's linked GitHub account must be that account.
+ *  - Organization: the user must be an active org admin (needs the App's
+ *    "Members: read" organization permission).
+ */
+async function verifyInstallationAdmin(
+  userId: string,
+  account: InstallationAccount,
+) {
+  const githubAccount = await getDb().query.account.findFirst({
+    where: and(
+      eq(schema.account.userId, userId),
+      eq(schema.account.providerId, "github"),
+    ),
+    columns: { accountId: true },
+  });
+  if (!githubAccount) throw new InstallationAccessError("github_not_linked");
+  if (account.type === "User") {
+    if (githubAccount.accountId === account.id) return;
+    throw new InstallationAccessError("not_admin");
+  }
+
+  const token = await githubUserToken(userId);
+  if (!token) throw new InstallationAccessError("github_not_linked");
+  const res = await fetch(
+    `https://api.github.com/user/memberships/orgs/${encodeURIComponent(account.login)}`,
+    {
+      headers: {
+        authorization: `Bearer ${token}`,
+        accept: "application/vnd.github+json",
+        "x-github-api-version": "2022-11-28",
+        "user-agent": "openvscan",
+      },
+    },
+  );
+  const membership = res.ok
+    ? ((await res.json()) as { role?: string; state?: string })
+    : null;
+  if (membership?.role === "admin" && membership.state === "active") return;
+  throw new InstallationAccessError("not_admin");
+}
+
+/**
+ * Bind `installationId` to the user who just installed the App, after
+ * verifying they administer it. An installation stays with the user who
+ * connected it first; nobody else can take it (or its repositories) over.
  */
 export async function syncInstallation(userId: string, installationId: string) {
-  const creds = getAppCreds();
+  if (!/^\d{1,20}$/.test(installationId))
+    throw new InstallationAccessError("invalid");
   const account = await getInstallationAccount(
-    appOctokit(creds),
+    appOctokit(getAppCreds()),
     installationId,
   );
-  const db = getDb();
+  await verifyInstallationAdmin(userId, account);
 
+  const db = getDb();
   const existing = await db.query.githubInstallation.findFirst({
     where: eq(schema.githubInstallation.installationId, installationId),
   });
+  if (existing && existing.userId !== userId)
+    throw new InstallationAccessError("taken");
 
+  const values = { accountLogin: account.login, accountType: account.type };
   if (existing) {
     await db
       .update(schema.githubInstallation)
-      .set({
-        userId,
-        accountLogin: account.login,
-        accountType: account.type,
-      })
+      .set(values)
       .where(eq(schema.githubInstallation.id, existing.id));
-    return { ...existing, userId, ...account };
+  } else {
+    await db
+      .insert(schema.githubInstallation)
+      .values({ id: crypto.randomUUID(), userId, installationId, ...values });
   }
-
-  const id = crypto.randomUUID();
-  await db.insert(schema.githubInstallation).values({
-    id,
-    userId,
-    installationId,
-    accountLogin: account.login,
-    accountType: account.type,
-  });
-  const row = await db.query.githubInstallation.findFirst({
-    where: eq(schema.githubInstallation.id, id),
-  });
-  return row!;
 }
 
 /** Octokit scoped to a stored installation row. */
