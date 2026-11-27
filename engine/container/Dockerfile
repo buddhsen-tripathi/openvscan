@@ -49,11 +49,10 @@ RUN arch="$(case "$TARGETARCH" in arm64) echo aarch64 ;; *) echo x86 ;; esac)" \
     "https://github.com/opengrep/opengrep/releases/download/v${OPENGREP_VERSION}/opengrep_linux_${arch}" \
   && chmod +x /usr/local/bin/opengrep \
   && git init -q /tmp/rules \
-  && cd /tmp/rules \
-  && git fetch -q --depth 1 "$OPENGREP_RULES_REPO" "$OPENGREP_RULES_COMMIT" \
-  && git checkout -q FETCH_HEAD \
+  && git -C /tmp/rules fetch -q --depth 1 "$OPENGREP_RULES_REPO" "$OPENGREP_RULES_COMMIT" \
+  && git -C /tmp/rules checkout -q FETCH_HEAD \
   && mkdir -p /opt/opengrep-rules \
-  && for d in */; do case "$d" in scripts/|stats/|ai/) ;; *) cp -r "$d" /opt/opengrep-rules/ ;; esac; done \
+  && for d in /tmp/rules/*/; do case "$(basename "$d")" in scripts|stats|ai) ;; *) cp -r "$d" /opt/opengrep-rules/ ;; esac; done \
   && find /opt/opengrep-rules -type f ! \( -name '*.yaml' -o -name '*.yml' \) -delete \
   && find /opt/opengrep-rules -type f \( -name '*.test.yaml' -o -name '*.test.yml' \) -delete \
   && rm -rf /tmp/rules

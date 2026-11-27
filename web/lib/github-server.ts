@@ -66,7 +66,8 @@ export const listConnectableRepos = createServerFn({ method: "GET" }).handler(
       } catch (err) {
         // One unreachable installation shouldn't hide the others.
         console.error(
-          `listing repos of installation ${inst.installationId} failed`,
+          "listing repos of installation failed",
+          inst.installationId,
           err,
         );
       }

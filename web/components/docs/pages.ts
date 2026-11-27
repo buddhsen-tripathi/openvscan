@@ -15,11 +15,12 @@ const CONTENT = import.meta.glob<{ default: MDXContent }>(
 
 /** The page's MDX module, or undefined if the file doesn't exist. */
 export function loadDoc(slug: string): ReturnType<Loader> | undefined {
-  return CONTENT[`/content/docs/${slug}.mdx`]?.();
+  return hasDoc(slug) ? CONTENT[`/content/docs/${slug}.mdx`]() : undefined;
 }
 
+/** Only real pages: the slug comes from the URL. */
 export function hasDoc(slug: string) {
-  return `/content/docs/${slug}.mdx` in CONTENT;
+  return Object.hasOwn(CONTENT, `/content/docs/${slug}.mdx`);
 }
 
 // One lazy component per page, so revisiting a page doesn't suspend again.
