@@ -48,6 +48,12 @@
   --color-brush-sand-base: #e3dccd;
   --color-brush-sand-stroke: #5b4d3a;
   --color-brush-sand-wash: #f1ece2;
+
+  /* Strong curves (emil-design-eng). These replace Tailwind's ease-out and
+     ease-in-out, so every `ease-out` utility gets the punchier curve. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 :root,
@@ -90,6 +96,15 @@
   --shadow-card: 0 1px 0 rgb(18 17 15 / 0.03), 0 1px 2px rgb(18 17 15 / 0.04);
   --shadow-float:
     0 1px 2px rgb(18 17 15 / 0.06), 0 12px 32px -8px rgb(18 17 15 / 0.18);
+  /* Elevation without a border: a 1px ring, lift and ambient depth. Pair it
+     with `border border-transparent` so forced-colors mode still draws an
+     edge. */
+  --shadow-edge:
+    0px 0px 0px 1px oklch(0 0 0 / 0.06), 0px 1px 2px -1px oklch(0 0 0 / 0.06),
+    0px 2px 4px 0px oklch(0 0 0 / 0.04);
+  --shadow-edge-hover:
+    0px 0px 0px 1px oklch(0 0 0 / 0.08), 0px 1px 2px -1px oklch(0 0 0 / 0.08),
+    0px 2px 4px 0px oklch(0 0 0 / 0.06);
 }
 
 /* Signed-in app, light: a whiter, quieter paper so dense tables read well. */
@@ -101,8 +116,8 @@
   --accent: #f1efe9;
   --border: #e7e3da;
   --input: #dcd7cc;
-  --sidebar: #fcfbf9;
-  --sidebar-accent: #efede7;
+  --sidebar: #f1efe9;
+  --sidebar-accent: #e6e3db;
   --sidebar-border: #ebe7de;
 }
 
@@ -150,7 +165,7 @@
   --brand-foreground: #0c1310;
   --brand-muted: #1c2a22;
 
-  --sidebar: #0e0d0c;
+  --sidebar: #0a0908;
   --sidebar-foreground: #c9c5bc;
   --sidebar-accent: #ffffff12;
   --sidebar-accent-foreground: #ffffff;
@@ -169,6 +184,9 @@
 
   --shadow-card: 0 0 0 1px rgb(0 0 0 / 0.2);
   --shadow-float: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+  /* Depth shadows vanish on dark surfaces: keep one white ring. */
+  --shadow-edge: 0 0 0 1px oklch(1 0 0 / 0.08);
+  --shadow-edge-hover: 0 0 0 1px oklch(1 0 0 / 0.13);
 }
 
 .paper {
@@ -267,6 +285,8 @@
 
   --shadow-card: var(--shadow-card);
   --shadow-float: var(--shadow-float);
+  --shadow-edge: var(--shadow-edge);
+  --shadow-edge-hover: var(--shadow-edge-hover);
 }
 
 @layer base {
@@ -305,8 +325,10 @@
     text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
     transition: text-decoration-color 150ms;
   }
-  .link-underline:hover {
-    text-decoration-color: currentColor;
+  @media (hover: hover) {
+    .link-underline:hover {
+      text-decoration-color: currentColor;
+    }
   }
 }
 

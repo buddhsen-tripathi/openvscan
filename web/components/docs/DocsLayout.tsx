@@ -228,7 +228,7 @@ function MobileNav({ current }: { current: string }) {
       {open && (
         <div
           id="docs-mobile-nav"
-          className="max-h-[70dvh] overflow-y-auto border-t border-rule px-5 py-5 sm:px-8"
+          className="max-h-[70dvh] overflow-y-auto overscroll-contain border-t border-rule px-5 py-5 sm:px-8"
         >
           <SidebarContent current={current} onNavigate={() => setOpen(false)} />
         </div>

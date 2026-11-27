@@ -9,6 +9,7 @@ import {
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import Link from "@/components/AppLink";
+import { AgentLogo } from "@/components/brand/AgentLogo";
 import { formatDuration, timeAgo } from "@/components/dashboard/RunList";
 import {
   EmptyState,
@@ -16,6 +17,7 @@ import {
   Notice,
   PageHeader,
   Panel,
+  TabBar,
   useBreadcrumb,
 } from "@/components/dashboard/ui";
 import {
@@ -413,7 +415,7 @@ function AiSummary({ run }: { run: RunDetail }) {
     return (
       <Panel>
         <div className="flex items-center gap-3 px-5 py-4 text-[13.5px] text-muted-foreground">
-          <Bot size={16} />
+          <AgentLogo agent={run.agent} />
           {name} reviews the change after the scanners finish.
         </div>
       </Panel>
@@ -479,35 +481,29 @@ function Findings({ run }: { run: RunDetail }) {
   return (
     <Panel>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 pt-3">
-        <div role="tablist" aria-label="Findings" className="flex gap-5">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                "-mb-px inline-flex items-center gap-1.5 border-b-2 pb-3 text-[13.5px] transition-colors",
-                tab === t.key
-                  ? "border-foreground font-medium text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t.label}
-              <Pill
-                tone={
-                  t.key === "blocking" && t.items.length > 0
-                    ? "danger"
-                    : "muted"
-                }
-                className="tabular rounded-full py-0"
-              >
-                {t.items.length}
-              </Pill>
-            </button>
-          ))}
-        </div>
+        <TabBar
+          label="Findings"
+          value={tab}
+          onChange={setTab}
+          tabs={tabs.map((t) => ({
+            key: t.key,
+            label: (
+              <>
+                {t.label}
+                <Pill
+                  tone={
+                    t.key === "blocking" && t.items.length > 0
+                      ? "danger"
+                      : "muted"
+                  }
+                  className="tabular rounded-full py-0"
+                >
+                  {t.items.length}
+                </Pill>
+              </>
+            ),
+          }))}
+        />
         <span className="pb-3 font-mono text-[11.5px] text-muted-foreground">
           fail on: {run.failOn}
         </span>
@@ -686,10 +682,26 @@ function FindingRow({
 
 /* --------------------------------- Sidebar -------------------------------- */
 
+const TRIGGER_LABELS: Record<RunDetail["trigger"], string> = {
+  pull_request: "Pull request",
+  command: "Comment command",
+  manual: "Manual",
+};
+
 function RunFacts({ run }: { run: RunDetail }) {
   const rows: [string, React.ReactNode][] = [
-    ["Trigger", run.trigger === "pull_request" ? "Pull request" : "Manual"],
-    ["Agent", run.agent ? AGENT_INFO[run.agent].label : "Scanners only"],
+    ["Trigger", TRIGGER_LABELS[run.trigger]],
+    [
+      "Agent",
+      run.agent ? (
+        <span key="a" className="inline-flex items-center gap-1.5">
+          <AgentLogo agent={run.agent} className="size-3.5" />
+          {AGENT_INFO[run.agent].label}
+        </span>
+      ) : (
+        "Scanners only"
+      ),
+    ],
     [
       "Fail on",
       <span key="f" className="capitalize">
@@ -798,7 +810,7 @@ function ScannerStats({ run }: { run: RunDetail }) {
 function Logs({ run }: { run: RunDetail }) {
   if (run.logs.length === 0) return null;
   return (
-    <details className="group overflow-hidden rounded-[10px] border border-border bg-card shadow-card">
+    <details className="group overflow-hidden rounded-[10px] border border-transparent bg-card shadow-edge">
       <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 [&::-webkit-details-marker]:hidden">
         <span className="text-[14px] font-semibold text-foreground">
           Run log

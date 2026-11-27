@@ -4,12 +4,11 @@ import {
   type ComponentProps,
   isValidElement,
   type ReactNode,
-  useEffect,
   useRef,
-  useState,
 } from "react";
 import Link from "@/components/AppLink";
-import { AlertTriangle, Check, Copy, Info, Sparkle } from "@/components/icons";
+import { AlertTriangle, Info, Sparkle } from "@/components/icons";
+import { CopyButton } from "@/components/ui/CopyButton";
 
 /** Plain text of a React node tree (for heading ids). */
 function textOf(node: ReactNode): string {
@@ -64,33 +63,6 @@ function Anchor({ href = "", children, ...props }: ComponentProps<"a">) {
   );
 }
 
-function CopyButton({ getText }: { getText: () => string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const t = window.setTimeout(() => setCopied(false), 1500);
-    return () => window.clearTimeout(t);
-  }, [copied]);
-  return (
-    <button
-      type="button"
-      aria-label={copied ? "Copied" : "Copy code"}
-      title={copied ? "Copied" : "Copy code"}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(getText());
-          setCopied(true);
-        } catch {
-          /* clipboard blocked; nothing useful to do */
-        }
-      }}
-      className="code-copy"
-    >
-      {copied ? <Check size={14} /> : <Copy size={14} />}
-    </button>
-  );
-}
-
 /** Code block from rehype-shiki, with a copy button. */
 function Pre({ className, children, ...props }: ComponentProps<"pre">) {
   const ref = useRef<HTMLPreElement>(null);
@@ -100,6 +72,8 @@ function Pre({ className, children, ...props }: ComponentProps<"pre">) {
         {children}
       </pre>
       <CopyButton
+        label="Copy code"
+        className="code-copy"
         getText={() => ref.current?.innerText.replace(/\n$/, "") ?? ""}
       />
     </div>

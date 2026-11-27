@@ -12,16 +12,13 @@ const OPTIONS: { value: ThemePreference; label: string; icon: Icon }[] = [
  * Three-way Light / Dark / System switch.
  *
  * `tone="night"` is for surfaces that stay dark in both themes (the footer).
- * `labels` shows the words next to the icons (the dashboard sidebar).
  */
 export function ThemeSwitch({
   className,
   tone = "auto",
-  labels = false,
 }: {
   className?: string;
   tone?: "auto" | "night";
-  labels?: boolean;
 }) {
   const { preference, setTheme } = useTheme();
   return (
@@ -29,7 +26,6 @@ export function ThemeSwitch({
       className={cn(
         "inline-flex items-center gap-0.5 rounded-[7px] border p-0.5",
         tone === "night" ? "border-white/15" : "border-border bg-card",
-        labels && "w-full",
         className,
       )}
     >
@@ -41,12 +37,11 @@ export function ThemeSwitch({
             key={value}
             type="button"
             aria-pressed={active}
-            aria-label={labels ? undefined : `${label} theme`}
+            aria-label={`${label} theme`}
             title={`${label} theme`}
             onClick={() => setTheme(value)}
             className={cn(
-              "inline-flex h-7 items-center justify-center gap-1.5 rounded-[5px] text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-              labels ? "flex-1 px-2" : "w-7",
+              "inline-flex size-7 items-center justify-center rounded-[5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
               tone === "night"
                 ? active
                   ? "bg-white/12 text-white"
@@ -57,7 +52,6 @@ export function ThemeSwitch({
             )}
           >
             <OptionIcon size={14} />
-            {labels && label}
           </button>
         );
       })}

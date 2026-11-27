@@ -218,47 +218,55 @@ function Exposure({
         </span>
       }
     >
-      <div className="px-5 pt-5 pb-4">
-        <div className="flex h-2.5 gap-[3px] overflow-hidden rounded-full bg-muted">
-          {total > 0 &&
-            SEVERITIES.filter((s) => exposure[s] > 0).map((s) => (
+      {total === 0 ? (
+        <p className="flex items-center gap-2 px-5 py-4 text-[13.5px] text-muted-foreground">
+          <ShieldCheck size={15} className="text-status-completed" />
+          No findings on open pull requests.
+        </p>
+      ) : (
+        <>
+          <div className="px-5 pt-5 pb-4">
+            <div className="flex h-2.5 gap-[3px] overflow-hidden rounded-full bg-muted">
+              {SEVERITIES.filter((s) => exposure[s] > 0).map((s) => (
+                <div
+                  key={s}
+                  className={cn(
+                    "h-full first:rounded-l-full last:rounded-r-full",
+                    SEVERITY_CLASS[s].bg,
+                  )}
+                  style={{ width: `${(exposure[s] / total) * 100}%` }}
+                  title={`${exposure[s]} ${s}`}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 border-t border-border sm:grid-cols-5">
+            {SEVERITIES.map((s, i) => (
               <div
                 key={s}
                 className={cn(
-                  "h-full first:rounded-l-full last:rounded-r-full",
-                  SEVERITY_CLASS[s].bg,
+                  "border-border px-5 py-3.5",
+                  i < 4 && "sm:border-r",
+                  i % 2 === 0 && "border-r sm:border-r",
+                  i < 4 && "border-b sm:border-b-0",
                 )}
-                style={{ width: `${(exposure[s] / total) * 100}%` }}
-                title={`${exposure[s]} ${s}`}
-              />
+              >
+                <SeverityBadge severity={s} />
+                <div
+                  className={cn(
+                    "tabular mt-1.5 font-display text-[26px] leading-none",
+                    exposure[s] > 0
+                      ? "text-foreground"
+                      : "text-muted-foreground/50",
+                  )}
+                >
+                  {exposure[s]}
+                </div>
+              </div>
             ))}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 border-t border-border sm:grid-cols-5">
-        {SEVERITIES.map((s, i) => (
-          <div
-            key={s}
-            className={cn(
-              "border-border px-5 py-3.5",
-              i < 4 && "sm:border-r",
-              i % 2 === 0 && "border-r sm:border-r",
-              i < 4 && "border-b sm:border-b-0",
-            )}
-          >
-            <SeverityBadge severity={s} />
-            <div
-              className={cn(
-                "tabular mt-1.5 font-display text-[26px] leading-none",
-                exposure[s] > 0
-                  ? "text-foreground"
-                  : "text-muted-foreground/50",
-              )}
-            >
-              {exposure[s]}
-            </div>
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </Panel>
   );
 }
@@ -292,7 +300,7 @@ function SetupChecklist({ repositories }: { repositories: number }) {
     {
       done: hasCred,
       title: "Add your coding agent",
-      desc: "Claude Code or Codex, on your own credential.",
+      desc: "Claude Code, Codex or Cursor, on your own credential.",
       href: "/dashboard/settings",
       cta: "Add agent",
       icon: Bot,

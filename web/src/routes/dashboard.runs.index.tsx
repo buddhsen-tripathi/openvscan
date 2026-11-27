@@ -11,6 +11,7 @@ import {
 } from "@/components/dashboard/ui";
 import { GitPullRequest } from "@/components/icons";
 import { SearchInput } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { useRunsQuery } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -44,10 +45,23 @@ const FILTERS: { key: string; label: string; test: (r: Run) => boolean }[] = [
   },
 ];
 
+const ALL_REPOS = "all";
+
 function RunsPage() {
   const { data: runs, isLoading, error } = useRunsQuery();
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
+  const [repo, setRepo] = useState(ALL_REPOS);
+
+  const repoOptions = useMemo(() => {
+    const names = [
+      ...new Set((runs ?? []).flatMap((r) => r.repository?.fullName ?? [])),
+    ].sort();
+    return [
+      { value: ALL_REPOS, label: "All repositories" },
+      ...names.map((n) => ({ value: n, label: n })),
+    ];
+  }, [runs]);
 
   const counts = useMemo(
     () =>
@@ -62,13 +76,14 @@ function RunsPage() {
     return (runs ?? []).filter(
       (r) =>
         f.test(r) &&
+        (repo === ALL_REPOS || r.repository?.fullName === repo) &&
         (!q ||
           r.repository?.fullName.toLowerCase().includes(q) ||
           r.pullRequest?.title.toLowerCase().includes(q) ||
           String(r.pullRequest?.number ?? "").includes(q) ||
           r.headRef.toLowerCase().includes(q)),
     );
-  }, [runs, filter, query]);
+  }, [runs, filter, query, repo]);
 
   return (
     <>
@@ -95,7 +110,7 @@ function RunsPage() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <fieldset
               aria-label="Filter reviews"
-              className="flex min-w-0 flex-wrap gap-1 rounded-[8px] border border-border bg-card p-1 shadow-card"
+              className="flex min-w-0 flex-wrap gap-1 rounded-[10px] border border-transparent bg-card p-1 shadow-edge"
             >
               {FILTERS.map((f) => (
                 <button
@@ -124,14 +139,25 @@ function RunsPage() {
                 </button>
               ))}
             </fieldset>
-            <SearchInput
-              aria-label="Filter reviews"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter by repository, PR or branch"
-              className="w-full sm:w-[300px]"
-              inputClassName="text-[13.5px]"
-            />
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              {repoOptions.length > 2 && (
+                <Select
+                  aria-label="Repository"
+                  value={repo}
+                  onChange={setRepo}
+                  options={repoOptions}
+                  className="w-full text-[13.5px] sm:w-[220px]"
+                />
+              )}
+              <SearchInput
+                aria-label="Search reviews"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search PR, branch or repository"
+                className="w-full sm:w-[280px]"
+                inputClassName="text-[13.5px]"
+              />
+            </div>
           </div>
           <Panel>
             <RunListHead />
