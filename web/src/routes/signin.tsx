@@ -2,51 +2,58 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import Link from "@/components/AppLink";
 import {
-  AuthError,
   AuthShell,
   GithubAuthButton,
+  oauthErrorMessage,
   PasswordField,
 } from "@/components/auth/AuthShell";
+import { Notice } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/Input";
+import { Field, Input } from "@/components/ui/Input";
 import { signIn } from "@/lib/auth-client";
-import { getSession } from "@/src/lib/session";
+import { isSignedIn, safeRedirect } from "@/src/lib/session";
 
 export const Route = createFileRoute("/signin")({
-  // Already signed in? Don't show the auth form — go to the dashboard.
-  beforeLoad: async () => {
-    if (await getSession()) {
-      throw redirect({ to: "/dashboard" });
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { redirect?: string; error?: string } => ({
+    redirect: safeRedirect(search.redirect) ?? undefined,
+    error: typeof search.error === "string" ? search.error : undefined,
+  }),
+  // Already signed in? Skip the form and go where the user was headed.
+  beforeLoad: async ({ search }) => {
+    if (await isSignedIn()) {
+      throw redirect({ href: search.redirect ?? "/dashboard" });
     }
   },
   component: SignInPage,
 });
 
 function SignInPage() {
+  const search = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    oauthErrorMessage(search.error),
+  );
   const navigate = useNavigate();
 
   return (
     <AuthShell
       title="Welcome back"
       subtitle="Sign in to continue securing your code before it ships."
-      footer={
-        <>
-          Don&apos;t have an account?{" "}
-          <Link
-            href="/signup"
-            className="font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            Create one
-          </Link>
-        </>
-      }
+      footer={{
+        prompt: "Don't have an account?",
+        href: "/signup",
+        label: "Create one",
+      }}
     >
-      <GithubAuthButton label="Continue with GitHub" />
+      <GithubAuthButton
+        label="Continue with GitHub"
+        redirectTo={search.redirect}
+      />
 
       <form
         className="mt-4 space-y-4"
@@ -65,9 +72,7 @@ function SignInPage() {
                 // Honor a post-login destination (the GitHub setup callback
                 // bounces unauthenticated users through /signin?redirect=…). It
                 // may be a non-router path, so use a full navigation when set.
-                const target = new URLSearchParams(window.location.search).get(
-                  "redirect",
-                );
+                const target = search.redirect;
                 if (target) {
                   window.location.href = target;
                 } else {
@@ -82,15 +87,9 @@ function SignInPage() {
           });
         }}
       >
-        {error && <AuthError message={error} />}
+        {error && <Notice tone="danger">{error}</Notice>}
 
-        <div className="space-y-1.5">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="email"
-          >
-            Email
-          </label>
+        <Field label="Email" htmlFor="email">
           <Input
             id="email"
             type="email"
@@ -100,23 +99,20 @@ function SignInPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-        </div>
+        </Field>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="password"
-            >
-              Password
-            </label>
+        <Field
+          label="Password"
+          htmlFor="password"
+          aside={
             <Link
               href="/forgot-password"
               className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               Forgot password?
             </Link>
-          </div>
+          }
+        >
           <PasswordField
             id="password"
             required
@@ -126,7 +122,7 @@ function SignInPage() {
             show={showPassword}
             onToggle={() => setShowPassword((v) => !v)}
           />
-        </div>
+        </Field>
 
         <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading ? "Signing in…" : "Sign in"}

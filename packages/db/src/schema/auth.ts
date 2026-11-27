@@ -95,3 +95,11 @@ export const verification = sqliteTable('verification', {
     .$onUpdate(() => new Date())
     .notNull(),
 });
+
+/** Better Auth rate-limit counters (shared across Worker isolates). */
+export const rateLimit = sqliteTable('rate_limit', {
+  id: text('id').primaryKey(),
+  key: text('key').notNull().unique(),
+  count: integer('count').notNull(),
+  lastRequest: integer('last_request').notNull(),
+});

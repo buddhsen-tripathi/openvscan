@@ -1,10 +1,12 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { DashboardProvider } from "@/components/dashboard/DashboardContext";
-import { Sidebar } from "@/components/dashboard/Sidebar";
+import { DashboardShell } from "@/components/dashboard/Shell";
 import { requireSession } from "@/src/lib/session";
 
 export const Route = createFileRoute("/dashboard")({
-  beforeLoad: async () => requireSession(),
+  // Signed-out visitors come back to the page they asked for after signing in.
+  beforeLoad: async ({ location }) =>
+    requireSession({ data: { returnTo: location.href } }),
   component: DashboardLayout,
 });
 
@@ -13,12 +15,9 @@ function DashboardLayout() {
 
   return (
     <DashboardProvider user={user}>
-      <div className="flex h-screen bg-background text-foreground">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Outlet />
-        </div>
-      </div>
+      <DashboardShell>
+        <Outlet />
+      </DashboardShell>
     </DashboardProvider>
   );
 }

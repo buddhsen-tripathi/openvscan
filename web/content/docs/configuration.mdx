@@ -1,0 +1,106 @@
+---
+title: Configuration
+description: Every secret, variable and binding for the web and engine Workers.
+---
+
+Each Worker reads two kinds of settings. **Secrets** are set with Wrangler (`wrangler secret put`, `wrangler secret bulk` or `wrangler deploy --secrets-file`) and never appear in the repository. **Variables** live in the `vars` block of the Worker's `wrangler.jsonc` and are replaced on every deploy. For local development, both kinds go in the Worker's `.dev.vars` file. See [Local development](/docs/local-development).
+
+## Web Worker secrets
+
+The web Worker is `openvscan-web`, configured in `web/wrangler.jsonc`.
+
+| Name | Required | Description | Example |
+|------|----------|-------------|---------|
+| `BETTER_AUTH_SECRET` | Yes | Secret Better Auth uses to sign sessions. | Output of `openssl rand -base64 32` |
+| `CREDENTIALS_KEY` | For AI review | AES-256-GCM key that encrypts the agent credentials users save in **Settings → AI agents**. Must be 32 random bytes, base64-encoded, and identical to the engine's value. Without it, users cannot save credentials. | Output of `openssl rand -base64 32` |
+| `GITHUB_APP_ID` | Yes | The GitHub App's numeric ID. | `123456` |
+| `GITHUB_APP_PRIVATE_KEY` | Yes | The App's private key in PEM format. Real newlines and escaped `\n` both work. | Contents of the downloaded `.pem` file |
+| `GITHUB_APP_SLUG` | Yes | The App's slug, used to build the install link `https://github.com/apps/<slug>/installations/new`. Without it, the dashboard shows no install button. | `openvscan-acme` |
+| `GITHUB_WEBHOOK_SECRET` | Yes | The App's webhook secret. Without it, every webhook delivery is rejected with `401`. | Output of `openssl rand -hex 32` |
+| `GITHUB_CLIENT_ID` | Yes | The App's OAuth client ID. Enables "Continue with GitHub" together with the client secret. | `Iv23li...` |
+| `GITHUB_CLIENT_SECRET` | Yes | The App's OAuth client secret. | Generated under **Client secrets** on the App |
+
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are technically optional: without them, only email and password sign-in is available. In practice they are required, because connecting an installation checks the user's access with their GitHub token. See [Sign in with GitHub](/docs/github-app).
+
+## Web Worker variables
+
+| Name | Required | Description | Example |
+|------|----------|-------------|---------|
+| `BETTER_AUTH_URL` | Yes | The public origin of the web Worker. Better Auth uses it as its base URL and as the only trusted origin, so it must match what users type in the browser. | `https://openvscan.example.com` |
+| `VITE_APP_URL` | Yes | Set it to the same origin. The server falls back to it when `BETTER_AUTH_URL` is unset. If it is present in the environment when you run `vite build`, it is also compiled into the browser bundle as the auth client's base URL. Otherwise the browser uses its current origin. | `https://openvscan.example.com` |
+
+Both ship set to `https://openvscan.com`. Change them before you deploy.
+
+### Email
+
+Verification and password-reset emails go through [Cloudflare Email Service](https://developers.cloudflare.com/email-service/). `web/wrangler.jsonc` declares a `send_email` binding named `EMAIL` and the var `EMAIL_FROM`.
+
+| Name | Required | Description | Example |
+|------|----------|-------------|---------|
+| `EMAIL_FROM` | For email | Sender address. Its domain must be onboarded with `wrangler email sending enable <domain>`. | `noreply@openvscan.example.com` |
+
+Without email, sign-up and sign-in still work, but nobody can reset a forgotten password and emails stay unverified. Signing in with GitHub then won't join an existing email account automatically; users link GitHub from **Settings → Sign-in methods** instead.
+
+## Engine Worker secrets
+
+The engine is `openvscan-engine`, configured in `engine/wrangler.jsonc`. All three secrets are listed under `secrets.required`, and Wrangler refuses to deploy the engine without them.
+
+| Name | Required | Description | Example |
+|------|----------|-------------|---------|
+| `CREDENTIALS_KEY` | Yes | The same value as the web Worker's. The engine decrypts the repository owner's credential with it when an AI review starts. | Output of `openssl rand -base64 32` |
+| `GITHUB_APP_ID` | Yes | The GitHub App's numeric ID. | `123456` |
+| `GITHUB_APP_PRIVATE_KEY` | Yes | The App's private key in PEM format. The engine uses it to create check runs, post reviews and comments, and mint read-only clone tokens. | Contents of the downloaded `.pem` file |
+
+## Engine Worker variables
+
+| Name | Default | Description |
+|------|---------|-------------|
+| `APP_URL` | `https://openvscan.com` | Public origin of the web Worker. The engine builds the check run's "details" link and the links in failure messages from it. Set it to your origin. |
+| `SANDBOX_INSTANCE` | `standard-2` | Container instance type for review sandboxes. See Instance types below. |
+| `DEV_ROUTES` | `false` | Enables the `/__dev/*` smoke-test routes. Keep it `false` in production. |
+
+<Callout type="warning" title="Never enable DEV_ROUTES in production">
+
+When `DEV_ROUTES` is `"true"`, anyone who can reach the engine's public URL can start sandbox containers, clone public repositories and run agents through `/__dev/scan` and `/__dev/agent`. These routes have no authentication. They exist for local testing only.
+
+</Callout>
+
+## Instance types
+
+`SANDBOX_INSTANCE` accepts the Cloudflare Containers instance types:
+
+- `lite`
+- `basic`
+- `standard-1`
+- `standard-2` (default)
+- `standard-3`
+- `standard-4`
+
+Each run gets its own container, and the whole run (clone, scanners and agent) happens on it. Larger types cost more per second of runtime. Smaller types lower cost but leave less memory and CPU for Trivy, Opengrep and the agent on large repositories. Start with the default and adjust based on run times and failures you see in the dashboard. Cloudflare's Containers documentation lists the vCPU, memory and disk of each type.
+
+## Bindings
+
+These are declared in the `wrangler.jsonc` files. You normally only change the D1 `database_id`.
+
+| Binding | Worker | Type | Target |
+|---------|--------|------|--------|
+| `DB` | Both | D1 database | `openvscan` |
+| `ARTIFACTS` | Both | R2 bucket | `openvscan-artifacts` |
+| `ENGINE` | Web | Service binding | Worker `openvscan-engine`, entrypoint `EngineApi` |
+| `REVIEW_WORKFLOW` | Engine | Workflow | `openvscan-review`, class `ReviewWorkflow` |
+| `SANDBOX` | Engine | Durable Object | `ScanSandbox`, backed by the container image built from `engine/container/Dockerfile` |
+
+Some names are referenced outside the binding itself. Keep them unless you change every reference:
+
+- The `db:migrate` and `db:migrate:local` scripts in the root `package.json` apply migrations to a database named `openvscan`.
+- The web Worker's `ENGINE` binding targets the Worker named `openvscan-engine`.
+
+## Container image build arguments
+
+`engine/container/Dockerfile` pins the tool versions with build arguments: `TRIVY_VERSION`, `GITLEAKS_VERSION`, `OPENGREP_VERSION`, `CLAUDE_CODE_VERSION`, `CODEX_VERSION` and `SANDBOX_VERSION`. `OPENGREP_RULES_REPO` and `OPENGREP_RULES_COMMIT` choose the Opengrep rules. Point them at your own rules repository if the opengrep-rules license does not suit your deployment.
+
+Change them by editing the defaults in the Dockerfile, and change them deliberately. Keep `SANDBOX_VERSION` in step with the `@cloudflare/sandbox` version in `engine/package.json`. The scanner output parsers in `engine/src/scanners` depend on each tool's flags and output format.
+
+## Password reset email
+
+OpenVScan does not send email. The password reset flow writes the reset link to the web Worker's logs, prefixed with `Reset password url:`. Users who sign in with GitHub are not affected.

@@ -1,36 +1,27 @@
-import { FileDown, Github, ListTree, ScanLine } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import Image from "@/components/AppImage";
 import Link from "@/components/AppLink";
+import { BrushPanel } from "@/components/brand/BrushPanel";
+import { Wordmark } from "@/components/brand/Mark";
+import { Notice } from "@/components/dashboard/ui";
+import { Github } from "@/components/icons";
+import { InlineComment, TriageCard } from "@/components/landing/mocks";
+import { REPO_URL } from "@/components/site";
+import { Input } from "@/components/ui/Input";
 import { signIn } from "@/lib/auth-client";
+import { cn } from "@/lib/utils";
 
 interface AuthShellProps {
   title: string;
   subtitle?: string;
   children: ReactNode;
-  footer?: ReactNode;
+  /** "Already have an account? Sign in" under the form. */
+  footer?: { prompt: string; href: string; label: string };
 }
 
-const scanners = ["Trivy", "Nmap", "Semgrep", "OWASP ZAP"];
-
-const features = [
-  {
-    icon: ScanLine,
-    title: "Async vulnerability scanning",
-    desc: "Queue-backed scans, powered by Trivy.",
-  },
-  {
-    icon: ListTree,
-    title: "Findings by severity",
-    desc: "Grouped results with remediation guidance.",
-  },
-  {
-    icon: FileDown,
-    title: "SARIF & JSON exports",
-    desc: "Drop results straight into your pipeline.",
-  },
-];
-
+/**
+ * Sign-in, sign-up and password pages: the form on paper, the product on a
+ * brush panel. Uses the marketing site's palette.
+ */
 export function AuthShell({
   title,
   subtitle,
@@ -38,98 +29,109 @@ export function AuthShell({
   footer,
 }: AuthShellProps) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-2">
-      {/* Form side */}
-      <section className="flex items-center justify-center px-6 py-12 sm:px-10">
-        <div className="w-full max-w-sm">
-          <div className="mb-8">
-            <Link href="/" className="mb-8 flex items-center gap-2">
-              <Image
-                src="/logo.png"
-                alt="OpenVScan"
-                width={28}
-                height={28}
-                className="rounded-md"
-              />
-              <span className="text-base font-semibold tracking-tight text-foreground">
-                OpenVScan
-              </span>
-            </Link>
-            <h1 className="font-serif text-3xl font-semibold tracking-tight text-foreground">
+    <div className="paper grid min-h-dvh bg-paper font-sans text-ink lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+      <section className="flex flex-col px-6 py-6 sm:px-10">
+        <Link
+          href="/"
+          className="inline-flex self-start text-ink"
+          aria-label="OpenVScan home"
+        >
+          <Wordmark className="text-[23px]" />
+        </Link>
+
+        <div className="flex flex-1 items-center justify-center py-12">
+          <div className="w-full max-w-[380px]">
+            <h1 className="font-display text-[40px] leading-[1.05] tracking-[-0.025em] text-ink">
               {title}
             </h1>
             {subtitle && (
-              <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
+              <p className="mt-3 text-[15.5px] leading-relaxed text-stone">
+                {subtitle}
+              </p>
+            )}
+            <div className="mt-8">{children}</div>
+            {footer && (
+              <p className="mt-8 text-[14px] text-stone">
+                {footer.prompt}{" "}
+                <Link
+                  href={footer.href}
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  {footer.label}
+                </Link>
+              </p>
             )}
           </div>
-
-          {children}
-
-          {footer && (
-            <p className="mt-8 text-center text-xs text-muted-foreground">
-              {footer}
-            </p>
-          )}
         </div>
+
+        <p className="text-[12.5px] text-pebble">
+          Open source under AGPL-3.0 ·{" "}
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="link-underline"
+          >
+            GitHub
+          </a>
+        </p>
       </section>
 
-      {/* Decorative side — distinct textured surface */}
-      <section className="relative hidden overflow-hidden border-l border-sidebar-border bg-sidebar lg:block">
-        {/* masked dot texture */}
-        <div className="absolute inset-0 bg-dot-pattern opacity-[0.06] [mask-image:radial-gradient(ellipse_at_top_right,black,transparent_70%)]" />
-        {/* soft directional tint + depth */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.05] via-transparent to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
-
-        <div className="relative z-10 flex h-full flex-col justify-center px-12 xl:px-16">
-          <h2 className="max-w-md font-serif text-3xl font-semibold leading-tight tracking-tight text-sidebar-foreground">
-            Catch the vulnerability before it ships.
-          </h2>
-          <p className="mt-3 max-w-md text-sm text-sidebar-foreground/60">
-            Open-source scanners and AI-assisted triage, unified into one
-            pre-production security workflow.
-          </p>
-
-          <ul className="mt-10 max-w-md space-y-4">
-            {features.map((f) => (
-              <li key={f.title} className="flex items-start gap-3">
-                <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-sidebar-border bg-card/60 text-sidebar-foreground">
-                  <f.icon size={15} />
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-sidebar-foreground">
-                    {f.title}
-                  </p>
-                  <p className="text-xs text-sidebar-foreground/55">{f.desc}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {/* Scanner integrations */}
-          <div className="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-sidebar-foreground/50">
-            <span className="uppercase tracking-wider">Powered by</span>
-            {scanners.map((name) => (
-              <span key={name}>{name}</span>
-            ))}
+      <section className="hidden p-3 lg:block">
+        <BrushPanel
+          id="auth"
+          tone="moss"
+          className="flex h-full flex-col justify-center rounded-[12px] px-10 py-16"
+        >
+          <div className="mx-auto grid w-full max-w-[540px] gap-4">
+            <TriageCard rows={3} className="max-w-none" />
+            <div className="ml-10">
+              <InlineComment compact />
+            </div>
           </div>
-        </div>
+        </BrushPanel>
       </section>
     </div>
   );
 }
 
+/** Plain-language text for the `?error=` codes Better Auth's OAuth flow returns. */
+export function oauthErrorMessage(code: string | undefined): string | null {
+  if (!code) return null;
+  switch (code) {
+    case "account_not_linked":
+      return "An OpenVScan account already uses this email, but the email hasn't been verified, so GitHub can't be joined to it automatically. Sign in with your email and password below, then link GitHub in Settings → Sign-in methods.";
+    case "email_not_found":
+      return "GitHub didn't share an email address. Make an email visible on GitHub (or allow email access when asked) and try again.";
+    case "access_denied":
+      return "GitHub sign-in was cancelled.";
+    case "account_already_linked_to_different_user":
+      return "That GitHub account is already linked to a different OpenVScan account.";
+    case "signup_disabled":
+      return "New sign-ups are disabled on this deployment.";
+    default:
+      return `GitHub sign-in didn't complete (${code.replace(/[^\w-]/g, "").slice(0, 60)}). Please try again.`;
+  }
+}
+
 /**
- * "Continue with GitHub" social-login button. Kicks off the Better-auth GitHub
- * OAuth flow; on success the user lands on the dashboard. When GitHub OAuth is
- * not configured the call fails and we surface a short hint.
+ * "Continue with GitHub". Starts the Better Auth GitHub OAuth flow; on success
+ * the user lands on the dashboard. When GitHub OAuth isn't configured the call
+ * fails and we show a short hint.
  */
-export function GithubAuthButton({ label }: { label: string }) {
+export function GithubAuthButton({
+  label,
+  redirectTo,
+}: {
+  label: string;
+  /** Same-origin path to land on after signing in (default: dashboard). */
+  redirectTo?: string | null;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       <button
         type="button"
         disabled={loading}
@@ -139,41 +141,30 @@ export function GithubAuthButton({ label }: { label: string }) {
           try {
             await signIn.social({
               provider: "github",
-              callbackURL: "/dashboard",
+              callbackURL: redirectTo ?? "/dashboard",
+              // Failures come back to the sign-in page (with ?error=) instead
+              // of the landing page, keeping the destination.
+              errorCallbackURL: redirectTo
+                ? `/signin?redirect=${encodeURIComponent(redirectTo)}`
+                : "/signin",
             });
           } catch {
             setLoading(false);
             setError("GitHub sign-in is not available. Try email instead.");
           }
         }}
-        className="flex h-10 w-full items-center justify-center gap-2 rounded-md border border-input bg-background/40 text-sm font-medium text-foreground shadow-xs transition-colors hover:bg-accent/50 disabled:opacity-60"
+        className="flex h-11 w-full items-center justify-center gap-2.5 rounded-[6px] bg-ink text-[15px] font-medium text-paper transition-colors hover:bg-ink-2 disabled:opacity-60"
       >
-        <Github size={16} />
+        <Github size={17} />
         {loading ? "Redirecting…" : label}
       </button>
-      {error && <p className="text-center text-xs text-destructive">{error}</p>}
+      {error && <Notice tone="danger">{error}</Notice>}
 
       <div className="flex items-center gap-3">
         <span className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or</span>
+        <span className="eyebrow text-pebble">or with email</span>
         <span className="h-px flex-1 bg-border" />
       </div>
-    </div>
-  );
-}
-
-export function AuthError({ message }: { message: string }) {
-  return (
-    <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive">
-      {message}
-    </div>
-  );
-}
-
-export function AuthSuccess({ message }: { message: string }) {
-  return (
-    <div className="rounded-md border border-status-completed/30 bg-status-completed-muted px-3 py-2 text-center text-sm text-status-completed">
-      {message}
     </div>
   );
 }
@@ -181,21 +172,24 @@ export function AuthSuccess({ message }: { message: string }) {
 export function PasswordField({
   show,
   onToggle,
+  className,
   ...props
 }: {
   show: boolean;
   onToggle: () => void;
-} & React.InputHTMLAttributes<HTMLInputElement>) {
+} & Omit<React.ComponentProps<"input">, "type">) {
   return (
     <div className="relative">
-      <input
+      <Input
         {...props}
         type={show ? "text" : "password"}
-        className="flex h-10 w-full rounded-md border border-input bg-background/40 px-3 py-1 pr-16 text-sm shadow-xs transition-colors placeholder:text-muted-foreground/60 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        className={cn("h-11 pr-16 text-[15px]", className)}
       />
       <button
         type="button"
-        tabIndex={-1}
+        aria-label="Show password"
+        aria-pressed={show}
+        aria-controls={props.id}
         onClick={onToggle}
         className="absolute inset-y-0 right-3 flex items-center text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
       >

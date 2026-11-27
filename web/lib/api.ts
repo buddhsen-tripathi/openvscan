@@ -1,4 +1,12 @@
+import { type CredentialKind, isActiveRun } from "@openvscan/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getAccount,
+  revokeSession,
+  setPassword,
+  updateProfile,
+} from "@/lib/account-server";
+import { authClient } from "@/lib/auth-client";
 import {
   connectRepository,
   disconnectRepository,
@@ -6,139 +14,202 @@ import {
   getRepository,
   listConnectableRepos,
   listRepositories,
-  startRepositoryScan,
-  updateRepositoryConfig,
+  type RepositorySettingsInput,
+  startManualRun,
+  syncGithub,
+  updateRepositorySettings,
 } from "@/lib/github-server";
 import {
-  cancelScan,
-  changePassword,
-  createProject,
-  getProfile,
-  getProject,
-  getScan,
-  listProjects,
-  listScans,
-  startScan,
-  updateProfile,
+  cancelRun,
+  deleteCredential,
+  getOverview,
+  getRun,
+  listCredentials,
+  listRuns,
+  rerun,
+  saveCredential,
 } from "@/lib/server";
 
-export const queryKeys = {
-  profile: ["profile"] as const,
-  projects: ["projects"] as const,
-  project: (id: string) => ["projects", id] as const,
-  scans: ["scans"] as const,
-  scan: (id: string) => ["scans", id] as const,
+const queryKeys = {
+  account: ["account"] as const,
+  overview: ["overview"] as const,
+  runs: ["runs"] as const,
+  run: (id: string) => ["runs", id] as const,
+  credentials: ["credentials"] as const,
   github: ["github"] as const,
   connectableRepos: ["github", "connectable"] as const,
   repositories: ["repositories"] as const,
   repository: (id: string) => ["repositories", id] as const,
 };
 
-/** Server-function-backed data layer (D1 via the web Worker). */
-export const api = {
-  scans: {
-    exportUrl: (id: string, format: "json" | "sarif") =>
-      `/api/scans/${id}/export?format=${format}`,
-  },
-};
+/* ------------------------------ Overview ------------------------------ */
 
-export function useProjectsQuery() {
+export function useOverviewQuery() {
   return useQuery({
-    queryKey: queryKeys.projects,
-    queryFn: () => listProjects(),
+    queryKey: queryKeys.overview,
+    queryFn: () => getOverview(),
+    refetchInterval: (query) =>
+      query.state.data?.recentRuns.some((r) => isActiveRun(r.status))
+        ? 4000
+        : 15_000,
   });
 }
 
-export function useProjectQuery(id: string) {
+/* -------------------------------- Runs -------------------------------- */
+
+export function useRunsQuery() {
   return useQuery({
-    queryKey: queryKeys.project(id),
-    queryFn: () => getProject({ data: id }),
+    queryKey: queryKeys.runs,
+    queryFn: () => listRuns(),
+    // Webhooks start runs at any time; poll faster while one is in flight.
+    refetchInterval: (query) =>
+      query.state.data?.some((r) => isActiveRun(r.status)) ? 4000 : 15_000,
+  });
+}
+
+export function useRunQuery(id: string) {
+  return useQuery({
+    queryKey: queryKeys.run(id),
+    queryFn: () => getRun({ data: id }),
     enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data && isActiveRun(query.state.data.status) ? 4000 : false,
   });
 }
 
-export function useScansQuery() {
-  return useQuery({
-    queryKey: queryKeys.scans,
-    queryFn: () => listScans(),
-  });
-}
-
-export function useScanQuery(id: string) {
-  return useQuery({
-    queryKey: queryKeys.scan(id),
-    queryFn: () => getScan({ data: id }),
-    enabled: Boolean(id),
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === "running" || status === "pending" ? 5000 : false;
-    },
-  });
-}
-
-export function useCreateProjectMutation() {
+export function useRerunMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; description?: string }) =>
-      createProject({ data }),
+    mutationFn: (id: string) => rerun({ data: id }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runs });
+      queryClient.invalidateQueries({ queryKey: queryKeys.repositories });
+      queryClient.invalidateQueries({ queryKey: queryKeys.overview });
     },
   });
 }
 
-export function useStartScanMutation() {
+export function useCancelRunMutation(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: {
-      projectId: string;
-      target: string;
-      scanners: string[];
-    }) => startScan({ data }),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.scans });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.project(variables.projectId),
-      });
-    },
-  });
-}
-
-export function useCancelScanMutation(id: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => cancelScan({ data: id }),
+    mutationFn: () => cancelRun({ data: id }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.scan(id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.scans });
+      queryClient.invalidateQueries({ queryKey: queryKeys.run(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runs });
     },
   });
 }
 
-/* ------------------------------ Profile ------------------------------ */
+/* ------------------------------ Credentials --------------------------- */
 
-export function useProfileQuery() {
+export function useCredentialsQuery() {
   return useQuery({
-    queryKey: queryKeys.profile,
-    queryFn: () => getProfile(),
+    queryKey: queryKeys.credentials,
+    queryFn: () => listCredentials(),
   });
 }
 
-export function useUpdateProfileMutation() {
+export function useSaveCredentialMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; image?: string | null }) =>
-      updateProfile({ data }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.profile });
-    },
+    mutationFn: (data: { kind: CredentialKind; secret: string }) =>
+      saveCredential({ data }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.credentials }),
   });
 }
 
-export function useChangePasswordMutation() {
+export function useDeleteCredentialMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { currentPassword: string; newPassword: string }) =>
-      changePassword({ data }),
+    mutationFn: (id: string) => deleteCredential({ data: id }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.credentials }),
+  });
+}
+
+/* ------------------------------ Account ------------------------------ */
+
+export function useAccountQuery() {
+  return useQuery({
+    queryKey: queryKeys.account,
+    queryFn: () => getAccount(),
+  });
+}
+
+/** Mutations that change the account refetch it on success. */
+function useAccountMutation<TVars, TResult>(
+  fn: (vars: TVars) => Promise<TResult>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.account }),
+  });
+}
+
+export const useUpdateProfileMutation = () =>
+  useAccountMutation((data: { name: string; image?: string | null }) =>
+    updateProfile({ data }),
+  );
+
+/** Better Auth client calls resolve to `{ error }`; turn that into a throw. */
+async function authCall(
+  call: Promise<{ error: { message?: string } | null }>,
+): Promise<void> {
+  const { error } = await call;
+  if (error) throw new Error(error.message || "Request failed");
+}
+
+export const useChangePasswordMutation = () =>
+  useAccountMutation(
+    (data: {
+      currentPassword: string;
+      newPassword: string;
+      signOutOthers: boolean;
+    }) =>
+      authCall(
+        authClient.changePassword({
+          currentPassword: data.currentPassword,
+          newPassword: data.newPassword,
+          revokeOtherSessions: data.signOutOthers,
+        }),
+      ),
+  );
+
+export const useSetPasswordMutation = () =>
+  useAccountMutation((newPassword: string) =>
+    setPassword({ data: { newPassword } }),
+  );
+
+export const useUnlinkGithubMutation = () =>
+  useAccountMutation((accountId: string) =>
+    authCall(authClient.unlinkAccount({ accountId })),
+  );
+
+export const useRevokeSessionMutation = () =>
+  useAccountMutation((id: string) => revokeSession({ data: id }));
+
+export const useRevokeOtherSessionsMutation = () =>
+  useAccountMutation((_?: undefined) =>
+    authCall(authClient.revokeOtherSessions()),
+  );
+
+export function useDeleteAccountMutation() {
+  return useMutation({
+    // Password accounts confirm with the password; GitHub-only accounts need
+    // a recent sign-in (Better Auth's fresh-session rule).
+    mutationFn: (password?: string) =>
+      authCall(authClient.deleteUser(password ? { password } : {})).catch(
+        (err: Error) => {
+          throw /fresh|expired/i.test(err.message)
+            ? new Error(
+                "For your security, sign out and sign in again, then delete the account within a day.",
+              )
+            : err;
+        },
+      ),
   });
 }
 
@@ -148,6 +219,15 @@ export function useGithubConnectionQuery() {
   return useQuery({
     queryKey: queryKeys.github,
     queryFn: () => getGithubConnection(),
+  });
+}
+
+/** Reconcile with GitHub, then refresh everything that shows GitHub data. */
+export function useSyncGithubMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => syncGithub(),
+    onSuccess: () => queryClient.invalidateQueries(),
   });
 }
 
@@ -163,6 +243,10 @@ export function useRepositoriesQuery() {
   return useQuery({
     queryKey: queryKeys.repositories,
     queryFn: () => listRepositories(),
+    refetchInterval: (query) =>
+      query.state.data?.some((r) => r.runs[0] && isActiveRun(r.runs[0].status))
+        ? 5000
+        : 30_000,
   });
 }
 
@@ -171,6 +255,8 @@ export function useRepositoryQuery(id: string) {
     queryKey: queryKeys.repository(id),
     queryFn: () => getRepository({ data: id }),
     enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data?.runs.some((r) => isActiveRun(r.status)) ? 4000 : 15_000,
   });
 }
 
@@ -197,14 +283,11 @@ export function useDisconnectRepositoryMutation() {
   });
 }
 
-export function useUpdateRepositoryConfigMutation(id: string) {
+export function useUpdateRepositorySettingsMutation(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: {
-      scanMode: "manual" | "automatic";
-      branchFilter: string | null;
-      enabledScanners: string[];
-    }) => updateRepositoryConfig({ data: { id, ...data } }),
+    mutationFn: (data: Omit<RepositorySettingsInput, "id">) =>
+      updateRepositorySettings({ data: { id, ...data } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.repository(id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.repositories });
@@ -212,13 +295,16 @@ export function useUpdateRepositoryConfigMutation(id: string) {
   });
 }
 
-export function useStartRepositoryScanMutation(id: string) {
+export function useStartManualRunMutation(repositoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => startRepositoryScan({ data: id }),
+    mutationFn: (branch?: string) =>
+      startManualRun({ data: { repositoryId, branch } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.repository(id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.scans });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.repository(repositoryId),
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runs });
     },
   });
 }

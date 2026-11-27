@@ -1,0 +1,153 @@
+---
+title: Register a GitHub App
+description: Create the GitHub App that receives pull request events, posts reviews and signs users in.
+---
+
+OpenVScan talks to GitHub through a GitHub App that you own. The App receives pull request and check run webhooks, posts check runs and comments, and mints short-lived read-only tokens for cloning. Its OAuth client is also what "Continue with GitHub" uses. This page walks through registering it and collecting the values you will set as secrets.
+
+You need your web origin before you start. See "Choose your web origin first" in the [Self-hosting guide](/docs/self-hosting). The examples use `https://openvscan.example.com`.
+
+## Create the App
+
+<Steps>
+<Step title="Open the new App form">
+
+- For an organization: **Organization settings → Developer settings → GitHub Apps → New GitHub App**.
+- For a personal account: **Settings → Developer settings → GitHub Apps → New GitHub App**.
+
+Create the App under the account that owns the repositories you want reviewed.
+
+</Step>
+<Step title="Name and homepage">
+
+| Field | Value |
+|-------|-------|
+| GitHub App name | Any unique name, for example `OpenVScan (Acme)`. GitHub derives the App's slug from it. |
+| Homepage URL | `https://openvscan.example.com` |
+
+</Step>
+<Step title="Identifying and authorizing users">
+
+These settings power "Continue with GitHub". OpenVScan uses Better Auth, which handles the OAuth callback at `/api/auth/callback/github`.
+
+| Field | Value |
+|-------|-------|
+| Callback URL | `https://openvscan.example.com/api/auth/callback/github` |
+| Request user authorization (OAuth) during installation | Leave **unchecked**. When it is checked, GitHub disables the Setup URL below. |
+| Enable Device Flow | Leave unchecked. |
+
+You can add more callback URLs later, for example `http://localhost:3000/api/auth/callback/github` for local development.
+
+</Step>
+<Step title="Post installation">
+
+After someone installs the App, GitHub redirects them to the Setup URL with an `installation_id`. The web Worker checks that the signed-in user can manage that installation, links it to their account and sends them to the repositories page.
+
+| Field | Value |
+|-------|-------|
+| Setup URL | `https://openvscan.example.com/api/github/setup` |
+| Redirect on update | **Checked**, so changes to the installed repositories also return to OpenVScan. |
+
+</Step>
+<Step title="Webhook">
+
+| Field | Value |
+|-------|-------|
+| Active | Checked |
+| Webhook URL | `https://openvscan.example.com/api/github/webhook` |
+| Webhook secret | A random string. Save it: it becomes `GITHUB_WEBHOOK_SECRET`. |
+
+Generate the secret with:
+
+```bash
+openssl rand -hex 32
+```
+
+The web Worker rejects every delivery with a `401` until `GITHUB_WEBHOOK_SECRET` is set to the same value.
+
+</Step>
+<Step title="Permissions">
+
+Under **Repository permissions**:
+
+| Permission | Access | Used for |
+|------------|--------|----------|
+| Checks | Read and write | Creating and updating the "OpenVScan Security Review" check run and its annotations. |
+| Pull requests | Read and write | Reading PR files, posting the inline review and the summary comment. |
+| Contents | Read-only | Cloning the PR head in the sandbox, with a token scoped to that one repository. |
+| Metadata | Read-only | Required by GitHub for every App. |
+
+Under **Organization permissions**, set **Members** to **Read-only**. When someone connects an installation on an organization, OpenVScan checks with their GitHub token that they are an admin of that organization.
+
+Under **Account permissions**, set **Email addresses** to **Read-only**. Better Auth reads the user's email from GitHub when they sign in, and users who keep their email private only expose it through this permission.
+
+Leave everything else at **No access**.
+
+</Step>
+<Step title="Events">
+
+Under **Subscribe to events**, check:
+
+- **Pull request**: opened, pushed to, reopened, marked ready for review, or closed.
+- **Check run**: lets the **Re-run** button on the OpenVScan check start a new review.
+- **Repository**: keeps renamed, transferred, made-private or deleted repositories in sync.
+
+You do not need to subscribe to installation events. GitHub sends `installation` and `installation_repositories` to every App, and OpenVScan uses them to remove repositories and installations that were uninstalled, and to pause reviews while an installation is suspended. If a webhook is missed, **Sync** on the Repositories page reconciles with GitHub.
+
+</Step>
+<Step title="Where the App can be installed">
+
+Choose **Only on this account** if you only review repositories owned by the account that owns the App. Choose **Any account** if other users or organizations will install it on your deployment.
+
+Then select **Create GitHub App**.
+
+</Step>
+</Steps>
+
+## Collect the App's credentials
+
+After the App is created you land on its **General** settings page. Collect these values:
+
+| Value | Where to find it | Becomes |
+|-------|------------------|---------|
+| App ID | **About** section, "App ID" | `GITHUB_APP_ID` (both Workers) |
+| Slug | The App's public URL, `https://github.com/apps/<slug>` | `GITHUB_APP_SLUG` (web) |
+| Client ID | **About** section, "Client ID" | `GITHUB_CLIENT_ID` (web) |
+| Client secret | **Client secrets → Generate a new client secret**. Copy it now, GitHub shows it once. | `GITHUB_CLIENT_SECRET` (web) |
+| Private key | **Private keys → Generate a private key**. Your browser downloads a `.pem` file. | `GITHUB_APP_PRIVATE_KEY` (both Workers) |
+| Webhook secret | The value you generated above | `GITHUB_WEBHOOK_SECRET` (web) |
+
+The slug is used to build the install link in the dashboard, `https://github.com/apps/<slug>/installations/new`. Without it, the dashboard cannot show the install button.
+
+Keep the `.pem` file out of the repository. Both Workers accept the key with real newlines or with escaped `\n` sequences, so you can store it on one line.
+
+<Callout type="warning" title="Treat the private key as a production secret">
+
+Anyone with the private key can act as your App on every installation. Store it in a password manager or secret store, and delete the downloaded file once it is set on both Workers.
+
+</Callout>
+
+## Sign in with GitHub
+
+"Continue with GitHub" is enabled when both `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set on the web Worker. Use the client ID and secret of this same App.
+
+On a self-hosted deployment you should treat this as required. When a user returns from installing the App, the web Worker checks that they administer the installation's account before linking it:
+
+- **Personal account**: the user's linked GitHub account must be the account the App was installed on.
+- **Organization**: the user must be an active admin of the organization, checked with `GET /user/memberships/orgs/{org}` and their GitHub token. This needs the **Members** organization permission above.
+
+An installation stays with the OpenVScan user who connected it first. Nobody else can connect it again or take over its repositories. A user who has never signed in with GitHub (or linked GitHub in Settings) cannot connect an installation.
+
+## A second App for local development
+
+GitHub sends webhooks to one URL per App. If you also run OpenVScan locally, register a second App for development with:
+
+- Callback URL `http://localhost:3000/api/auth/callback/github`
+- Setup URL `http://localhost:3000/api/github/setup`
+- Webhook URL pointing at a tunnel to port 3000
+
+See [Local development](/docs/local-development).
+
+## Next
+
+Continue with [Deploy to Cloudflare](/docs/deploy).

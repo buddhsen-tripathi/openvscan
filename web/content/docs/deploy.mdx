@@ -1,0 +1,251 @@
+---
+title: Deploy to Cloudflare
+description: Provision D1 and R2, set secrets, deploy the engine and web Workers, and run a test review.
+---
+
+This page takes you from a fresh clone to a working deployment. You need the GitHub App values from [Register a GitHub App](/docs/github-app), Docker running locally, and a Cloudflare account on the Workers Paid plan.
+
+All commands run from the repository root. Wrangler is a dev dependency of both Workers, so the commands call it through `pnpm --filter <worker> exec wrangler`. The examples use `https://openvscan.example.com` as the web origin.
+
+## Deploy
+
+<Steps>
+<Step title="Clone and install">
+
+```bash
+git clone https://github.com/Buddhsen-tripathi/openvscan.git
+cd openvscan
+pnpm install
+```
+
+If you plan to change configuration, fork the repository first and clone your fork. You will edit both `wrangler.jsonc` files, and Wrangler reads variables from them on every deploy.
+
+</Step>
+<Step title="Log in to Cloudflare">
+
+```bash
+pnpm --filter openvscan-web exec wrangler login
+```
+
+</Step>
+<Step title="Create the D1 database and R2 bucket">
+
+```bash
+pnpm --filter openvscan-web exec wrangler d1 create openvscan
+pnpm --filter openvscan-web exec wrangler r2 bucket create openvscan-artifacts
+```
+
+`d1 create` prints the new database's `database_id`. Copy it. If Wrangler offers to add the database to your configuration, decline: both Workers already declare the binding.
+
+Keep these names. The `db:migrate` scripts in `package.json` apply migrations to a database named `openvscan`, and both `wrangler.jsonc` files bind the bucket `openvscan-artifacts`.
+
+</Step>
+<Step title="Edit both wrangler.jsonc files">
+
+Put your `database_id` in the `d1_databases` entry of **both** `web/wrangler.jsonc` and `engine/wrangler.jsonc`. The values in the repository belong to the maintainers' account.
+
+```jsonc
+"d1_databases": [
+  {
+    "binding": "DB",
+    "database_name": "openvscan",
+    "database_id": "<your-database-id>",
+    "migrations_dir": "../packages/db/migrations"
+  }
+]
+```
+
+Then set the variables to your web origin. In `web/wrangler.jsonc`:
+
+```jsonc
+"vars": {
+  "VITE_APP_URL": "https://openvscan.example.com",
+  "BETTER_AUTH_URL": "https://openvscan.example.com"
+}
+```
+
+In `engine/wrangler.jsonc`:
+
+```jsonc
+"vars": {
+  "APP_URL": "https://openvscan.example.com",
+  "SANDBOX_INSTANCE": "standard-2",
+  "DEV_ROUTES": "false"
+}
+```
+
+`BETTER_AUTH_URL` must be the exact origin users open in the browser. Better Auth trusts only that origin and rejects sign-in requests from any other. `APP_URL` is used for the "details" links the engine posts on GitHub. See [Configuration](/docs/configuration) for every variable.
+
+</Step>
+<Step title="Apply the database migrations">
+
+```bash
+pnpm db:migrate
+```
+
+This runs `wrangler d1 migrations apply openvscan --remote` with the web Worker's configuration, which reads migrations from `packages/db/migrations`. Wrangler lists the pending migrations and asks you to confirm.
+
+</Step>
+<Step title="Generate keys and write the secret files">
+
+Generate the two random keys:
+
+```bash
+openssl rand -base64 32   # CREDENTIALS_KEY, the same value for both Workers
+openssl rand -base64 32   # BETTER_AUTH_SECRET
+```
+
+Convert the App's private key to a single line with escaped newlines:
+
+```bash
+awk -v ORS='\\n' '1' path/to/your-app.private-key.pem
+```
+
+Write two secret files outside the repository, for example in `~/openvscan-secrets/`. Both use `.env` format.
+
+`~/openvscan-secrets/engine.env`:
+
+```ini
+GITHUB_APP_ID=123456
+GITHUB_APP_PRIVATE_KEY="<the .pem file, newlines written as \n>"
+CREDENTIALS_KEY=<same value as in web.env>
+```
+
+`~/openvscan-secrets/web.env`:
+
+```ini
+BETTER_AUTH_SECRET=<random value>
+CREDENTIALS_KEY=<same value as in engine.env>
+GITHUB_APP_ID=123456
+GITHUB_APP_SLUG=openvscan-acme
+GITHUB_APP_PRIVATE_KEY="<the .pem file, newlines written as \n>"
+GITHUB_WEBHOOK_SECRET=<the App's webhook secret>
+GITHUB_CLIENT_ID=Iv23...
+GITHUB_CLIENT_SECRET=<the App's client secret>
+```
+
+Which secret goes where:
+
+| Secret | Web | Engine | Source |
+|--------|-----|--------|--------|
+| `CREDENTIALS_KEY` | Yes | Yes | `openssl rand -base64 32`. Must be identical in both Workers. |
+| `GITHUB_APP_ID` | Yes | Yes | App settings, **About** section |
+| `GITHUB_APP_PRIVATE_KEY` | Yes | Yes | The `.pem` you generated on the App |
+| `BETTER_AUTH_SECRET` | Yes | No | `openssl rand -base64 32` |
+| `GITHUB_APP_SLUG` | Yes | No | The App's public URL, `https://github.com/apps/<slug>` |
+| `GITHUB_WEBHOOK_SECRET` | Yes | No | The value you entered on the App |
+| `GITHUB_CLIENT_ID` | Yes | No | App settings, **About** section |
+| `GITHUB_CLIENT_SECRET` | Yes | No | App settings, **Client secrets** |
+
+Dotenv values expand `$VAR`. If a value contains a literal `$`, escape it as `\$`.
+
+<Callout type="warning" title="CREDENTIALS_KEY must match">
+
+The web Worker encrypts agent credentials with `CREDENTIALS_KEY` and the engine decrypts them when a review starts. If the two values differ, every AI review fails.
+
+</Callout>
+
+</Step>
+<Step title="Deploy the engine">
+
+Make sure Docker is running, then:
+
+```bash
+pnpm --filter openvscan-engine exec wrangler deploy --secrets-file ~/openvscan-secrets/engine.env
+```
+
+Wrangler builds the container image from `engine/container/Dockerfile`, pushes it to Cloudflare, and deploys the Worker, the `openvscan-review` Workflow and the `ScanSandbox` Durable Object. The first build downloads the scanners, the Trivy vulnerability database, opengrep-rules and both agent CLIs, so it takes several minutes.
+
+`engine/wrangler.jsonc` lists `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` and `CREDENTIALS_KEY` under `secrets.required`. Wrangler refuses to create the engine without them, and `wrangler secret put` cannot set secrets on a Worker that does not exist yet. That is why the first deploy uses `--secrets-file`.
+
+</Step>
+<Step title="Deploy the web Worker">
+
+```bash
+pnpm --filter openvscan-web run build
+pnpm --filter openvscan-web exec wrangler deploy --secrets-file ~/openvscan-secrets/web.env
+```
+
+The web Worker's `ENGINE` service binding points at `openvscan-engine` and its `EngineApi` entrypoint. Deploy the engine first, or the web Worker cannot start reviews.
+
+</Step>
+<Step title="Attach a custom domain (optional)">
+
+Skip this step if you use the `workers.dev` URL.
+
+The domain's zone must be on Cloudflare. In the Cloudflare dashboard, open **Workers & Pages → openvscan-web → Settings → Domains & Routes → Add → Custom domain** and enter your hostname.
+
+Or add a route to `web/wrangler.jsonc` and deploy the web Worker again:
+
+```jsonc
+"routes": [
+  { "pattern": "openvscan.example.com", "custom_domain": true }
+]
+```
+
+The engine does not need a domain. The web Worker reaches it over the service binding.
+
+</Step>
+<Step title="Verify">
+
+1. Check the engine. Its public URL only answers `/health`:
+
+   ```bash
+   curl https://openvscan-engine.<your-subdomain>.workers.dev/health
+   ```
+
+   It returns `{"ok":true}`.
+
+2. Open your web origin and choose **Continue with GitHub**.
+3. In the dashboard, open **Repositories** and install the GitHub App on one or more repositories. GitHub sends you back through `/api/github/setup` to the repositories page.
+4. Connect a repository.
+5. Optional: in **Settings → AI agents**, save a Claude or OpenAI credential and choose an agent in the repository's settings. See [Agent credentials](/docs/agent-credentials).
+6. Open a pull request on the connected repository. The **OpenVScan Security Review** check appears on the PR, and the review appears under **Reviews** in the dashboard.
+
+On GitHub, the App's **Advanced** tab lists recent webhook deliveries and their response codes. Successful deliveries return `200`.
+
+</Step>
+</Steps>
+
+## Changing secrets later
+
+Secrets persist across deploys. To change one, use `wrangler secret put` on the Worker that needs it. It prompts for the value and deploys a new version immediately.
+
+```bash
+pnpm --filter openvscan-web exec wrangler secret put GITHUB_WEBHOOK_SECRET
+pnpm --filter openvscan-engine exec wrangler secret put GITHUB_APP_PRIVATE_KEY
+```
+
+To set several at once, use `wrangler secret bulk` with a `.env` or JSON file:
+
+```bash
+pnpm --filter openvscan-web exec wrangler secret bulk ~/openvscan-secrets/web.env
+```
+
+Variables are different. Every `wrangler deploy` replaces them with the values in `wrangler.jsonc`, so change variables in the file and redeploy. Do not create a secret with the same name as a variable.
+
+## Redeploying
+
+After the first deploy, the `--secrets-file` flag is no longer needed:
+
+```bash
+pnpm --filter openvscan-engine run deploy
+pnpm --filter openvscan-web run deploy
+```
+
+The web Worker's `deploy` script runs the build first. Always deploy the engine before the web Worker. See [Upgrading](/docs/upgrading).
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---------|-------|
+| Webhook deliveries return `401` with `webhook not configured` | `GITHUB_WEBHOOK_SECRET` is not set on the web Worker. |
+| Webhook deliveries return `401` with `invalid signature` | `GITHUB_WEBHOOK_SECRET` does not match the secret on the App. |
+| Sign-in fails with an origin error | `BETTER_AUTH_URL` does not match the origin in the browser. Check the scheme, host and port. |
+| "Link your GitHub account in Settings → Sign-in methods…" | The user has no linked GitHub account, or its token can't be refreshed. Link GitHub in Settings, then install again. |
+| "Only the account owner or an organization admin can connect this installation." | The user isn't the personal account the App was installed on, or isn't an admin of the organization. For organizations, also check the App has the **Members: read** organization permission and that `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` are this App's own OAuth credentials. |
+| "This installation is already connected to another OpenVScan account." | Another user connected it first. They can disconnect it, or uninstall and reinstall the App. |
+| "ENGINE service binding is missing" | The engine is not deployed, or the web Worker was deployed before it. Deploy the engine, then the web Worker. |
+| The dashboard says credentials cannot be saved | `CREDENTIALS_KEY` is not set on the web Worker. |
+| The summary says "AI review did not complete" | Check the run log. A decryption error means `CREDENTIALS_KEY` is missing on the engine or differs between the two Workers. |
+| The sandbox cannot reach a host | Expected. The engine logs every refused request as `[egress] denied:` in Workers observability. See [Security model](/docs/security-model). |

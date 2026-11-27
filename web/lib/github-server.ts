@@ -1,8 +1,29 @@
-import { env } from "cloudflare:workers";
+import {
+  AGENT_PROVIDERS,
+  type AgentProvider,
+  FAIL_THRESHOLDS,
+  type FailThreshold,
+  SCANNERS,
+  type Scanner,
+} from "@openvscan/core";
+import { chunk } from "@openvscan/db";
+import {
+  appOctokit,
+  getBranchHeadSha,
+  type InstallationRepo,
+} from "@openvscan/github";
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq } from "drizzle-orm";
-import { getDb, requireUserId, schema } from "@/lib/db";
-import { accessibleRepos, installUrl, isGithubConfigured } from "@/lib/github";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { getDb, schema } from "@/lib/db";
+import {
+  accessibleRepos,
+  getAppCreds,
+  installUrl,
+  isGithubConfigured,
+  octokitForInstallation,
+} from "@/lib/github";
+import { createAndStartRun, releaseRepositories } from "@/lib/runs";
+import { requireUserId } from "@/lib/user";
 
 /* ------------------------- Connection / install ------------------------- */
 
@@ -37,24 +58,18 @@ export const listConnectableRepos = createServerFn({ method: "GET" }).handler(
     });
     const connectedIds = new Set(connected.map((r) => r.githubRepoId));
 
-    const results: Array<{
-      githubRepoId: string;
-      fullName: string;
-      owner: string;
-      name: string;
-      defaultBranch: string;
-      private: boolean;
-      installationRowId: string;
-    }> = [];
+    const results: InstallationRepo[] = [];
     for (const inst of installations) {
       try {
         const repos = await accessibleRepos(inst.installationId);
-        for (const r of repos) {
-          if (connectedIds.has(r.githubRepoId)) continue;
-          results.push({ ...r, installationRowId: inst.id });
-        }
-      } catch {
-        /* skip installations we can't reach */
+        results.push(...repos.filter((r) => !connectedIds.has(r.githubRepoId)));
+      } catch (err) {
+        // One unreachable installation shouldn't hide the others.
+        console.error(
+          "listing repos of installation failed",
+          inst.installationId,
+          err,
+        );
       }
     }
     return results;
@@ -63,11 +78,38 @@ export const listConnectableRepos = createServerFn({ method: "GET" }).handler(
 
 /* ------------------------------ Repositories ----------------------------- */
 
+async function requireRepo(userId: string, id: string) {
+  const repo = await getDb().query.repository.findFirst({
+    where: and(
+      eq(schema.repository.id, id),
+      eq(schema.repository.userId, userId),
+    ),
+    with: { installation: true },
+  });
+  if (!repo) throw new Error("Repository not found");
+  return repo;
+}
+
 export const connectRepository = createServerFn({ method: "POST" })
-  .validator((githubRepoId: string) => githubRepoId)
+  .validator((githubRepoId: string) => {
+    if (typeof githubRepoId !== "string" || !/^\d+$/.test(githubRepoId)) {
+      throw new Error("Invalid repository id");
+    }
+    return githubRepoId;
+  })
   .handler(async ({ data: githubRepoId }) => {
     const userId = await requireUserId();
     const db = getDb();
+
+    const existing = await db.query.repository.findFirst({
+      where: eq(schema.repository.githubRepoId, githubRepoId),
+    });
+    if (existing) {
+      if (existing.userId === userId) return existing;
+      throw new Error(
+        "This repository is already connected by another account",
+      );
+    }
 
     const installations = await db.query.githubInstallation.findMany({
       where: eq(schema.githubInstallation.userId, userId),
@@ -79,48 +121,50 @@ export const connectRepository = createServerFn({ method: "POST" })
       const match = repos.find((r) => r.githubRepoId === githubRepoId);
       if (!match) continue;
 
-      const existing = await db.query.repository.findFirst({
-        where: and(
-          eq(schema.repository.userId, userId),
-          eq(schema.repository.githubRepoId, githubRepoId),
-        ),
-      });
-      if (existing) return existing;
-
-      const id = crypto.randomUUID();
-      await db.insert(schema.repository).values({
-        id,
-        userId,
-        installationId: inst.id,
-        githubRepoId: match.githubRepoId,
-        owner: match.owner,
-        name: match.name,
-        fullName: match.fullName,
-        defaultBranch: match.defaultBranch,
-        private: match.private,
-        scanMode: "manual",
-        branchFilter: match.defaultBranch,
-        enabledScanners: ["dependency_audit"],
-      });
-      const row = await db.query.repository.findFirst({
-        where: eq(schema.repository.id, id),
-      });
-      return row!;
+      const [row] = await db
+        .insert(schema.repository)
+        .values({
+          id: crypto.randomUUID(),
+          userId,
+          installationId: inst.id,
+          githubRepoId: match.githubRepoId,
+          owner: match.owner,
+          name: match.name,
+          fullName: match.fullName,
+          defaultBranch: match.defaultBranch,
+          private: match.private,
+        })
+        .returning();
+      return row;
     }
     throw new Error("Repository not accessible by the GitHub App");
   });
 
+/** Connected repos with their latest run, for the list page. */
 export const listRepositories = createServerFn({ method: "GET" }).handler(
   async () => {
     const userId = await requireUserId();
-    const db = getDb();
-    return db.query.repository.findMany({
+    return getDb().query.repository.findMany({
       where: eq(schema.repository.userId, userId),
       orderBy: [desc(schema.repository.createdAt)],
+      with: {
+        runs: {
+          orderBy: [desc(schema.run.createdAt)],
+          limit: 1,
+          columns: {
+            id: true,
+            status: true,
+            conclusion: true,
+            createdAt: true,
+            counts: true,
+          },
+        },
+      },
     });
   },
 );
 
+/** Repo + its PRs (each with its latest run) + recent runs. */
 export const getRepository = createServerFn({ method: "GET" })
   .validator((id: string) => id)
   .handler(async ({ data: id }) => {
@@ -132,114 +176,231 @@ export const getRepository = createServerFn({ method: "GET" })
         eq(schema.repository.userId, userId),
       ),
       with: {
-        scans: { orderBy: [desc(schema.scan.createdAt)], limit: 20 },
+        installation: { columns: { accountLogin: true, accountType: true } },
+        pullRequests: {
+          orderBy: [desc(schema.pullRequest.updatedAt)],
+          limit: 50,
+          with: {
+            runs: {
+              orderBy: [desc(schema.run.createdAt)],
+              limit: 1,
+            },
+          },
+        },
+        runs: {
+          orderBy: [desc(schema.run.createdAt)],
+          limit: 20,
+          with: {
+            pullRequest: { columns: { number: true, title: true } },
+          },
+        },
       },
     });
     if (!repo) throw new Error("Repository not found");
     return repo;
   });
 
-export const updateRepositoryConfig = createServerFn({ method: "POST" })
-  .validator(
-    (data: {
-      id: string;
-      scanMode: "manual" | "automatic";
-      branchFilter: string | null;
-      enabledScanners: string[];
-    }) => data,
-  )
+export interface RepositorySettingsInput {
+  id: string;
+  autoReview: boolean;
+  skipDrafts: boolean;
+  scanners: Scanner[];
+  agent: AgentProvider | null;
+  agentModel: string | null;
+  instructions: string | null;
+  failOn: FailThreshold;
+}
+
+export const updateRepositorySettings = createServerFn({ method: "POST" })
+  .validator((data: RepositorySettingsInput) => {
+    if (!data || typeof data.id !== "string") throw new Error("Invalid input");
+    const scanners = Array.isArray(data.scanners)
+      ? [...new Set(data.scanners)].filter((s): s is Scanner =>
+          (SCANNERS as readonly string[]).includes(s),
+        )
+      : [];
+    if (scanners.length === 0 && !data.agent) {
+      throw new Error("Enable at least one scanner or an AI agent");
+    }
+    if (
+      data.agent !== null &&
+      !(AGENT_PROVIDERS as readonly string[]).includes(data.agent)
+    ) {
+      throw new Error("Unknown agent");
+    }
+    if (!(FAIL_THRESHOLDS as readonly string[]).includes(data.failOn)) {
+      throw new Error("Invalid fail threshold");
+    }
+    const agentModel = data.agentModel?.trim() || null;
+    if (agentModel && !/^[\w.:/-]{1,100}$/.test(agentModel)) {
+      throw new Error(
+        "Model name may only contain letters, digits and . : / - _",
+      );
+    }
+    const instructions = data.instructions?.trim() || null;
+    if (instructions && instructions.length > 4000) {
+      throw new Error("Instructions must be 4000 characters or fewer");
+    }
+    return {
+      id: data.id,
+      autoReview: Boolean(data.autoReview),
+      skipDrafts: Boolean(data.skipDrafts),
+      scanners,
+      agent: data.agent,
+      agentModel,
+      instructions,
+      failOn: data.failOn,
+    };
+  })
   .handler(async ({ data }) => {
     const userId = await requireUserId();
+    await requireRepo(userId, data.id);
     const db = getDb();
-
-    const repo = await db.query.repository.findFirst({
-      where: and(
-        eq(schema.repository.id, data.id),
-        eq(schema.repository.userId, userId),
-      ),
-    });
-    if (!repo) throw new Error("Repository not found");
-
-    if (data.scanMode !== "manual" && data.scanMode !== "automatic") {
-      throw new Error("Invalid scan mode");
-    }
-    if (!data.enabledScanners?.length) {
-      throw new Error("Select at least one scanner");
-    }
-
-    const branchFilter = data.branchFilter?.trim() || null;
-    await db
+    const { id, ...settings } = data;
+    const [updated] = await db
       .update(schema.repository)
-      .set({
-        scanMode: data.scanMode,
-        branchFilter,
-        enabledScanners: data.enabledScanners,
-      })
-      .where(eq(schema.repository.id, data.id));
-
-    const updated = await db.query.repository.findFirst({
-      where: eq(schema.repository.id, data.id),
-    });
-    return updated!;
+      .set(settings)
+      .where(eq(schema.repository.id, id))
+      .returning();
+    return updated;
   });
 
-/** Manually trigger a scan of a connected repo's default branch. */
-export const startRepositoryScan = createServerFn({ method: "POST" })
-  .validator((id: string) => id)
-  .handler(async ({ data: id }) => {
+/** Review a branch head on demand (no PR → full-repo scan, no diff). */
+export const startManualRun = createServerFn({ method: "POST" })
+  .validator((data: { repositoryId: string; branch?: string }) => {
+    const branch = data.branch?.trim() || undefined;
+    if (branch && !/^[\w./-]{1,250}$/.test(branch)) {
+      throw new Error("Invalid branch name");
+    }
+    return { repositoryId: data.repositoryId, branch };
+  })
+  .handler(async ({ data }) => {
     const userId = await requireUserId();
-    const db = getDb();
-    const repo = await db.query.repository.findFirst({
-      where: and(
-        eq(schema.repository.id, id),
-        eq(schema.repository.userId, userId),
-      ),
-      with: { installation: true },
-    });
-    if (!repo) throw new Error("Repository not found");
+    const repo = await requireRepo(userId, data.repositoryId);
+    const branch = data.branch ?? repo.defaultBranch;
 
-    const branch = repo.defaultBranch;
-    const scanners =
-      repo.enabledScanners.length > 0
-        ? repo.enabledScanners
-        : ["dependency_audit"];
-    const config = {
-      target: `https://github.com/${repo.owner}/${repo.name}.git`,
-      scanners,
-      // No prNumber on a manual run — results land in the dashboard.
-      github: {
-        installationId: repo.installation.installationId,
-        owner: repo.owner,
-        repo: repo.name,
+    let headSha: string;
+    try {
+      headSha = await getBranchHeadSha(
+        octokitForInstallation(repo.installation.installationId),
+        repo.owner,
+        repo.name,
         branch,
-        commitSha: "",
-      },
-    };
-    const scanId = crypto.randomUUID();
-    await db.insert(schema.scan).values({
-      id: scanId,
-      repositoryId: repo.id,
-      status: "pending",
-      config,
+      );
+    } catch (err) {
+      if ((err as { status?: number }).status === 404) {
+        throw new Error(`Branch "${branch}" was not found on GitHub`);
+      }
+      throw err;
+    }
+
+    const { installation: _installation, ...repoRow } = repo;
+    const runId = await createAndStartRun({
+      repo: repoRow,
       trigger: "manual",
-      branch,
+      headRef: branch,
+      headSha,
+      baseSha: null,
     });
-    await env.SCAN_QUEUE.send({ scanId, config });
-    return { scanId, status: "pending", message: "Scan started" };
+    return { runId };
   });
 
 export const disconnectRepository = createServerFn({ method: "POST" })
   .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const userId = await requireUserId();
-    const db = getDb();
-    const repo = await db.query.repository.findFirst({
-      where: and(
-        eq(schema.repository.id, id),
-        eq(schema.repository.userId, userId),
-      ),
-    });
-    if (!repo) throw new Error("Repository not found");
-    await db.delete(schema.repository).where(eq(schema.repository.id, id));
+    await requireRepo(userId, id);
+    await releaseRepositories([id], "Repository disconnected");
+    await getDb().delete(schema.repository).where(eq(schema.repository.id, id));
     return { message: "Repository disconnected" };
   });
+
+/**
+ * Reconcile with GitHub on demand (webhooks can be missed): drop
+ * installations and repositories the App can no longer reach, and refresh
+ * names, visibility, default branches and suspension state.
+ */
+export const syncGithub = createServerFn({ method: "POST" }).handler(
+  async () => {
+    const userId = await requireUserId();
+    const db = getDb();
+    const installations = await db.query.githubInstallation.findMany({
+      where: eq(schema.githubInstallation.userId, userId),
+      with: { repositories: true },
+    });
+    const app = appOctokit(getAppCreds());
+    let updated = 0;
+    let removed = 0;
+
+    for (const inst of installations) {
+      let info: { suspended_at?: string | null; account?: unknown };
+      try {
+        ({ data: info } = await app.request(
+          "GET /app/installations/{installation_id}",
+          { installation_id: Number(inst.installationId) },
+        ));
+      } catch (err) {
+        if ((err as { status?: number }).status !== 404) throw err;
+        // Uninstalled while we weren't listening.
+        await releaseRepositories(
+          inst.repositories.map((r) => r.id),
+          "GitHub App uninstalled",
+        );
+        await db
+          .delete(schema.githubInstallation)
+          .where(eq(schema.githubInstallation.id, inst.id));
+        removed += inst.repositories.length;
+        continue;
+      }
+      const login = (info.account as { login?: string } | null)?.login;
+      await db
+        .update(schema.githubInstallation)
+        .set({
+          suspendedAt: info.suspended_at ? new Date(info.suspended_at) : null,
+          ...(login ? { accountLogin: login } : {}),
+        })
+        .where(eq(schema.githubInstallation.id, inst.id));
+      if (info.suspended_at) continue; // repo list is unavailable while suspended
+
+      const live = new Map(
+        (await accessibleRepos(inst.installationId)).map((r) => [
+          r.githubRepoId,
+          r,
+        ]),
+      );
+      const gone = inst.repositories.filter((r) => !live.has(r.githubRepoId));
+      if (gone.length) {
+        const ids = gone.map((r) => r.id);
+        await releaseRepositories(ids, "Repository no longer accessible");
+        for (const part of chunk(ids, 90)) {
+          await db
+            .delete(schema.repository)
+            .where(inArray(schema.repository.id, part));
+        }
+        removed += gone.length;
+      }
+      for (const repo of inst.repositories) {
+        const gh = live.get(repo.githubRepoId);
+        if (
+          !gh ||
+          (gh.fullName === repo.fullName &&
+            gh.private === repo.private &&
+            gh.defaultBranch === repo.defaultBranch)
+        )
+          continue;
+        await db
+          .update(schema.repository)
+          .set({
+            owner: gh.owner,
+            name: gh.name,
+            fullName: gh.fullName,
+            private: gh.private,
+            defaultBranch: gh.defaultBranch,
+          })
+          .where(eq(schema.repository.id, repo.id));
+        updated++;
+      }
+    }
+    return { installations: installations.length, updated, removed };
+  },
+);

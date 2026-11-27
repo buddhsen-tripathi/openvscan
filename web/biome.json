@@ -7,7 +7,16 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!node_modules", "!dist", "!build", "!.wrangler"]
+    "includes": [
+      "**",
+      "!node_modules",
+      "!dist",
+      "!build",
+      "!.wrangler",
+      "!worker-configuration.d.ts",
+      "!src/routeTree.gen.ts",
+      "!components/icons/pika"
+    ]
   },
   "formatter": {
     "enabled": true,

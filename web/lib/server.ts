@@ -1,263 +1,313 @@
-import { env } from "cloudflare:workers";
-import { ScanStatus } from "@openvscan/types";
+import {
+  CREDENTIAL_INFO,
+  CREDENTIAL_KINDS,
+  type CredentialKind,
+  emptyCounts,
+  isActiveRun,
+  SEVERITIES,
+  type Severity,
+  sealSecret,
+  secretHint,
+} from "@openvscan/core";
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeaders } from "@tanstack/react-start/server";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
-import { getAuth } from "@/lib/auth";
-import { getDb, requireUserId, schema } from "@/lib/db";
+import { and, asc, count, desc, eq, gte, inArray } from "drizzle-orm";
+import { getDb, schema } from "@/lib/db";
+import {
+  cancelActiveRunsForPr,
+  createAndStartRun,
+  requestCancel,
+} from "@/lib/runs";
+import { requireUserId } from "@/lib/user";
+import { getEnv } from "@/src/lib/env";
 
-/* ----------------------------- Projects ----------------------------- */
+/** Subquery: ids of the repositories the user owns (avoids D1's 100-param cap). */
+function userRepoIds(userId: string) {
+  return getDb()
+    .select({ id: schema.repository.id })
+    .from(schema.repository)
+    .where(eq(schema.repository.userId, userId));
+}
 
-export const listProjects = createServerFn({ method: "GET" }).handler(
+/* ------------------------------ Overview ----------------------------- */
+
+export const getOverview = createServerFn({ method: "GET" }).handler(
   async () => {
     const userId = await requireUserId();
     const db = getDb();
-    return db.query.project.findMany({
-      where: eq(schema.project.userId, userId),
-      orderBy: [desc(schema.project.createdAt)],
-    });
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [[repoCount], [runsWeek], openPrs, recentRuns] = await Promise.all([
+      db
+        .select({ n: count() })
+        .from(schema.repository)
+        .where(eq(schema.repository.userId, userId)),
+      db
+        .select({ n: count() })
+        .from(schema.run)
+        .where(
+          and(
+            inArray(schema.run.repositoryId, userRepoIds(userId)),
+            gte(schema.run.createdAt, weekAgo),
+          ),
+        ),
+      db.query.pullRequest.findMany({
+        where: and(
+          inArray(schema.pullRequest.repositoryId, userRepoIds(userId)),
+          eq(schema.pullRequest.state, "open"),
+        ),
+        orderBy: [desc(schema.pullRequest.updatedAt)],
+        limit: 100,
+        with: {
+          repository: { columns: { id: true, fullName: true } },
+          runs: { orderBy: [desc(schema.run.createdAt)], limit: 1 },
+        },
+      }),
+      db.query.run.findMany({
+        where: inArray(schema.run.repositoryId, userRepoIds(userId)),
+        orderBy: [desc(schema.run.createdAt)],
+        limit: 8,
+        with: {
+          repository: { columns: { id: true, fullName: true } },
+          pullRequest: { columns: { number: true, title: true } },
+        },
+      }),
+    ]);
+
+    // Open exposure: severity totals on the latest completed run of each open PR.
+    const exposure = emptyCounts();
+    let reviewedPrs = 0;
+    let failingPrs = 0;
+    for (const pr of openPrs) {
+      const latest = pr.runs[0];
+      if (!latest) continue;
+      reviewedPrs++;
+      if (latest.conclusion === "fail") failingPrs++;
+      if (latest.counts) {
+        for (const s of SEVERITIES) exposure[s] += latest.counts[s] ?? 0;
+      }
+    }
+
+    return {
+      repositories: repoCount?.n ?? 0,
+      openPrs: openPrs.length,
+      reviewedPrs,
+      failingPrs,
+      runsLast7Days: runsWeek?.n ?? 0,
+      exposure,
+      attention: openPrs
+        .filter((pr) => pr.runs[0]?.conclusion === "fail")
+        .slice(0, 6),
+      recentRuns,
+    };
   },
 );
 
-export const getProject = createServerFn({ method: "GET" })
-  .validator((id: string) => id)
-  .handler(async ({ data: id }) => {
-    const userId = await requireUserId();
-    const db = getDb();
-    const project = await db.query.project.findFirst({
-      where: and(
-        eq(schema.project.id, id),
-        eq(schema.project.userId, userId),
-      ),
-      with: {
-        scans: { orderBy: [desc(schema.scan.createdAt)] },
-      },
-    });
-    if (!project) throw new Error("Project not found");
-    return project;
-  });
+/* -------------------------------- Runs ------------------------------- */
 
-export const createProject = createServerFn({ method: "POST" })
-  .validator((data: { name: string; description?: string }) => data)
-  .handler(async ({ data }) => {
-    const userId = await requireUserId();
-    const db = getDb();
-    const id = crypto.randomUUID();
-    await db.insert(schema.project).values({
-      id,
-      name: data.name,
-      description: data.description || null,
-      userId,
-    });
-    const project = await db.query.project.findFirst({
-      where: eq(schema.project.id, id),
-    });
-    return project!;
-  });
-
-/* ------------------------------- Scans ------------------------------ */
-
-export const listScans = createServerFn({ method: "GET" }).handler(async () => {
+export const listRuns = createServerFn({ method: "GET" }).handler(async () => {
   const userId = await requireUserId();
-  const db = getDb();
-  const [userProjects, userRepos] = await Promise.all([
-    db.query.project.findMany({
-      where: eq(schema.project.userId, userId),
-      columns: { id: true },
-    }),
-    db.query.repository.findMany({
-      where: eq(schema.repository.userId, userId),
-      columns: { id: true },
-    }),
-  ]);
-  const projectIds = userProjects.map((p) => p.id);
-  const repoIds = userRepos.map((r) => r.id);
-  if (projectIds.length === 0 && repoIds.length === 0) return [];
-
-  const conditions = [];
-  if (projectIds.length) conditions.push(inArray(schema.scan.projectId, projectIds));
-  if (repoIds.length) conditions.push(inArray(schema.scan.repositoryId, repoIds));
-
-  return db.query.scan.findMany({
-    where: conditions.length === 1 ? conditions[0] : or(...conditions),
+  return getDb().query.run.findMany({
+    where: inArray(schema.run.repositoryId, userRepoIds(userId)),
+    orderBy: [desc(schema.run.createdAt)],
+    limit: 50,
     with: {
-      project: { columns: { id: true, name: true } },
       repository: { columns: { id: true, fullName: true } },
+      pullRequest: { columns: { number: true, title: true, url: true } },
     },
-    orderBy: [desc(schema.scan.createdAt)],
   });
 });
 
-export const getScan = createServerFn({ method: "GET" })
+async function requireRun(userId: string, runId: string) {
+  const run = await getDb().query.run.findFirst({
+    where: eq(schema.run.id, runId),
+    with: { repository: true, pullRequest: true },
+  });
+  if (!run || run.repository.userId !== userId)
+    throw new Error("Run not found");
+  return run;
+}
+
+export const getRun = createServerFn({ method: "GET" })
   .validator((id: string) => id)
   .handler(async ({ data: id }) => {
     const userId = await requireUserId();
+    const run = await requireRun(userId, id);
     const db = getDb();
-    const scan = await db.query.scan.findFirst({
-      where: eq(schema.scan.id, id),
-      with: {
-        project: true,
-        repository: true,
-        findings: true,
-        logs: { orderBy: (logs, { asc }) => [asc(logs.timestamp)] },
-      },
-    });
-    if (!scan) throw new Error("Scan not found");
-    const ownerId = scan.project?.userId ?? scan.repository?.userId;
-    if (ownerId !== userId) throw new Error("Access denied");
-    return scan;
+    const [findings, logs] = await Promise.all([
+      db.query.finding.findMany({ where: eq(schema.finding.runId, id) }),
+      db.query.runLog.findMany({
+        where: eq(schema.runLog.runId, id),
+        orderBy: [asc(schema.runLog.timestamp)],
+        limit: 500,
+      }),
+    ]);
+    const rank = (s: Severity) => SEVERITIES.indexOf(s);
+    findings.sort(
+      (a, b) =>
+        rank(a.severity) - rank(b.severity) ||
+        Number(b.inDiff) - Number(a.inDiff) ||
+        (a.filePath ?? "").localeCompare(b.filePath ?? ""),
+    );
+    return {
+      ...run,
+      // Scanner metadata is free-form JSON; narrow it to a serializable shape.
+      findings: findings.map((f) => ({
+        ...f,
+        metadata: f.metadata as Record<
+          string,
+          string | number | boolean | null
+        > | null,
+      })),
+      logs,
+    };
   });
 
-export const startScan = createServerFn({ method: "POST" })
-  .validator(
-    (data: { projectId: string; target: string; scanners: string[] }) => data,
-  )
+/** Re-run a review: PR runs use the PR's current head, branch runs the same sha. */
+export const rerun = createServerFn({ method: "POST" })
+  .validator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const userId = await requireUserId();
+    const original = await requireRun(userId, id);
+    const { repository: repo, pullRequest: pr } = original;
+
+    if (pr) {
+      await cancelActiveRunsForPr(pr.id, "Superseded by a re-run");
+      const runId = await createAndStartRun({
+        repo,
+        pullRequest: pr,
+        trigger: "pull_request",
+        headRef: pr.headRef,
+        headSha: pr.headSha,
+        baseSha: pr.baseSha,
+      });
+      return { runId };
+    }
+    const runId = await createAndStartRun({
+      repo,
+      trigger: "manual",
+      headRef: original.headRef,
+      headSha: original.headSha,
+      baseSha: original.baseSha,
+    });
+    return { runId };
+  });
+
+export const cancelRun = createServerFn({ method: "POST" })
+  .validator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const userId = await requireUserId();
+    const run = await requireRun(userId, id);
+    if (!isActiveRun(run.status)) {
+      throw new Error(`Cannot cancel a ${run.status} run`);
+    }
+    await requestCancel(id, "Cancelled from the dashboard");
+    return { message: "Cancellation requested" };
+  });
+
+/* ------------------------- Agent credentials ------------------------- */
+
+export const listCredentials = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const userId = await requireUserId();
+    const rows = await getDb().query.agentCredential.findMany({
+      where: eq(schema.agentCredential.userId, userId),
+      // Never select the ciphertext/iv into the client payload.
+      columns: {
+        id: true,
+        kind: true,
+        provider: true,
+        hint: true,
+        lastUsedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    return {
+      encryptionConfigured: Boolean(getEnv("CREDENTIALS_KEY")),
+      credentials: rows,
+    };
+  },
+);
+
+export const saveCredential = createServerFn({ method: "POST" })
+  .validator((data: { kind: CredentialKind; secret: string }) => {
+    if (!(CREDENTIAL_KINDS as readonly string[]).includes(data?.kind)) {
+      throw new Error("Unknown credential type");
+    }
+    const secret = typeof data.secret === "string" ? data.secret.trim() : "";
+    if (secret.length < 20 || secret.length > 4000) {
+      throw new Error(
+        "That doesn't look like a valid token (expected 20–4000 characters)",
+      );
+    }
+    if (/\s/.test(secret)) {
+      throw new Error("The token must not contain spaces or line breaks");
+    }
+    // Catch the common mix-up of pasting one kind of credential as another.
+    // (Unknown prefixes are accepted — providers change formats.)
+    const looksLike = CREDENTIAL_KINDS.find(
+      (k) =>
+        k !== data.kind &&
+        k !== "openai_api_key" && // "sk-" is too generic to infer from
+        secret.startsWith(CREDENTIAL_INFO[k].prefix ?? "\u0000"),
+    );
+    if (looksLike) {
+      throw new Error(
+        `This looks like a ${CREDENTIAL_INFO[looksLike].label}, not a ${CREDENTIAL_INFO[data.kind].label}`,
+      );
+    }
+    return { kind: data.kind, secret };
+  })
   .handler(async ({ data }) => {
     const userId = await requireUserId();
-    const db = getDb();
-
-    const project = await db.query.project.findFirst({
-      where: and(
-        eq(schema.project.id, data.projectId),
-        eq(schema.project.userId, userId),
-      ),
-    });
-    if (!project) throw new Error("Project not found");
-
-    if (!data.target) throw new Error("Target is required");
-    if (!data.scanners?.length) throw new Error("Select at least one scanner");
-
-    const scanId = crypto.randomUUID();
-    const config = { target: data.target, scanners: data.scanners };
-
-    await db.insert(schema.scan).values({
-      id: scanId,
-      projectId: data.projectId,
-      status: ScanStatus.PENDING,
-      config,
-    });
-
-    // Dispatch to the Cloudflare Queue (consumer Worker runs the scanners).
-    await env.SCAN_QUEUE.send({ scanId, config });
-
-    return {
-      scanId,
-      status: ScanStatus.PENDING,
-      target: data.target,
-      timestamp: new Date().toISOString(),
-      message: "Scan started successfully",
-    };
-  });
-
-export const cancelScan = createServerFn({ method: "POST" })
-  .validator((id: string) => id)
-  .handler(async ({ data: id }) => {
-    const userId = await requireUserId();
-    const db = getDb();
-
-    const scan = await db.query.scan.findFirst({
-      where: eq(schema.scan.id, id),
-      with: {
-        project: { columns: { userId: true } },
-        repository: { columns: { userId: true } },
-      },
-    });
-    if (!scan) throw new Error("Scan not found");
-    const ownerId = scan.project?.userId ?? scan.repository?.userId;
-    if (ownerId !== userId) throw new Error("Access denied");
-
-    if (
-      scan.status !== ScanStatus.PENDING &&
-      scan.status !== ScanStatus.RUNNING
-    ) {
-      throw new Error(`Cannot cancel scan with status: ${scan.status}`);
+    const key = getEnv("CREDENTIALS_KEY");
+    if (!key) {
+      throw new Error(
+        "CREDENTIALS_KEY is not configured on this deployment — an operator must set it before credentials can be saved",
+      );
     }
-
-    // Cancel-via-flag: Cloudflare Queues has no random-access job removal, so
-    // we set a flag the consumer checks. A still-pending scan is cancelled now.
-    if (scan.status === ScanStatus.PENDING) {
-      await db
-        .update(schema.scan)
-        .set({
-          status: ScanStatus.CANCELLED,
-          cancelRequested: true,
-          completedAt: new Date(),
-        })
-        .where(eq(schema.scan.id, id));
-      return { message: "Scan cancelled", status: ScanStatus.CANCELLED };
-    }
-
-    await db
-      .update(schema.scan)
-      .set({ cancelRequested: true })
-      .where(eq(schema.scan.id, id));
-    return {
-      message: "Cancellation requested",
-      status: scan.status,
-    };
-  });
-
-/* ------------------------------ Profile ----------------------------- */
-
-export const getProfile = createServerFn({ method: "GET" }).handler(async () => {
-  const userId = await requireUserId();
-  const db = getDb();
-  const [u, credential] = await Promise.all([
-    db.query.user.findFirst({ where: eq(schema.user.id, userId) }),
-    // A "credential" account means the user has a password (vs GitHub-only).
-    db.query.account.findFirst({
+    const db = getDb();
+    const provider = CREDENTIAL_INFO[data.kind].provider;
+    const existing = await db.query.agentCredential.findFirst({
       where: and(
-        eq(schema.account.userId, userId),
-        eq(schema.account.providerId, "credential"),
+        eq(schema.agentCredential.userId, userId),
+        eq(schema.agentCredential.provider, provider),
       ),
       columns: { id: true },
-    }),
-  ]);
-  if (!u) throw new Error("User not found");
-  return {
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    image: u.image,
-    emailVerified: u.emailVerified,
-    createdAt: u.createdAt,
-    hasPassword: Boolean(credential),
-  };
-});
-
-export const updateProfile = createServerFn({ method: "POST" })
-  .validator((data: { name: string; image?: string | null }) => data)
-  .handler(async ({ data }) => {
-    // requireUserId both authorizes and ensures a session exists for the
-    // Better-auth call below.
-    await requireUserId();
-    const name = data.name?.trim();
-    if (!name) throw new Error("Name is required");
-    const image = data.image?.trim() || null;
-    await getAuth().api.updateUser({
-      body: { name, image },
-      headers: getRequestHeaders(),
     });
-    return { success: true };
+    const id = existing?.id ?? crypto.randomUUID();
+    // The row id is bound as AAD so a ciphertext can't be moved between rows.
+    const sealed = await sealSecret(key, data.secret, id);
+    const values = {
+      kind: data.kind,
+      provider,
+      ciphertext: sealed.ciphertext,
+      iv: sealed.iv,
+      hint: secretHint(data.secret),
+      lastUsedAt: null,
+    };
+    if (existing) {
+      await db
+        .update(schema.agentCredential)
+        .set(values)
+        .where(eq(schema.agentCredential.id, id));
+    } else {
+      await db.insert(schema.agentCredential).values({ id, userId, ...values });
+    }
+    return { id, provider, kind: data.kind, hint: values.hint };
   });
 
-export const changePassword = createServerFn({ method: "POST" })
-  .validator(
-    (data: { currentPassword: string; newPassword: string }) => data,
-  )
-  .handler(async ({ data }) => {
-    await requireUserId();
-    if (!data.currentPassword) throw new Error("Current password is required");
-    if (!data.newPassword || data.newPassword.length < 8) {
-      throw new Error("New password must be at least 8 characters");
-    }
-    await getAuth().api.changePassword({
-      body: {
-        currentPassword: data.currentPassword,
-        newPassword: data.newPassword,
-        revokeOtherSessions: false,
-      },
-      headers: getRequestHeaders(),
-    });
-    return { success: true };
+export const deleteCredential = createServerFn({ method: "POST" })
+  .validator((id: string) => id)
+  .handler(async ({ data: id }) => {
+    const userId = await requireUserId();
+    await getDb()
+      .delete(schema.agentCredential)
+      .where(
+        and(
+          eq(schema.agentCredential.id, id),
+          eq(schema.agentCredential.userId, userId),
+        ),
+      );
+    return { message: "Credential removed" };
   });

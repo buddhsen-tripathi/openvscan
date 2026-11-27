@@ -1,0 +1,167 @@
+---
+title: Upgrading
+description: Move to a new version, apply migrations in order, redeploy, rotate keys, and the licenses that apply.
+---
+
+An upgrade has three parts: apply any new database migrations, deploy the engine, then deploy the web Worker. This page also covers rotating secrets and the licensing terms that apply to a self-hosted deployment.
+
+## Before you upgrade
+
+Check what changed, and whether the new version adds migrations:
+
+```bash
+git fetch origin
+git log --oneline HEAD..origin/main
+git diff --stat HEAD origin/main -- packages/db/migrations
+```
+
+If there are new migrations, back up the database first:
+
+```bash
+pnpm --filter openvscan-web exec wrangler d1 export openvscan --remote --output openvscan-backup.sql
+```
+
+D1 also keeps point-in-time history (Time Travel), which you can restore with `wrangler d1 time-travel restore`.
+
+Check whether any reviews are in progress under **Reviews** in the dashboard. A review that is running while you deploy the engine can fail. You can start it again with **Re-run** on the PR's check, or from the dashboard.
+
+## Upgrade
+
+<Steps>
+<Step title="Pull the new version">
+
+```bash
+git pull
+pnpm install
+```
+
+If you deploy from a fork, merge upstream into it. Keep your `database_id`, your variables and any routes in both `wrangler.jsonc` files.
+
+</Step>
+<Step title="Apply migrations">
+
+```bash
+pnpm db:migrate
+```
+
+Wrangler applies the pending files in `packages/db/migrations` in filename order and records each one in the database's `d1_migrations` table. Migrations that were already applied are skipped, so the command is safe to run on every upgrade.
+
+Apply migrations before you deploy, so the new code never runs against the old schema.
+
+</Step>
+<Step title="Deploy the engine">
+
+```bash
+pnpm --filter openvscan-engine run deploy
+```
+
+Docker must be running. If the Dockerfile changed, Wrangler rebuilds and pushes the container image.
+
+</Step>
+<Step title="Deploy the web Worker">
+
+```bash
+pnpm --filter openvscan-web run deploy
+```
+
+This builds the web app and deploys it. Secrets carry over from the previous deploy, and variables are taken from `web/wrangler.jsonc`.
+
+</Step>
+<Step title="Verify">
+
+Open a pull request on a connected repository, or use **Re-run** on an existing OpenVScan check, and confirm the review completes.
+
+</Step>
+</Steps>
+
+Always deploy the engine before the web Worker. The web Worker calls the engine's `EngineApi` over a service binding, and a new web Worker can depend on engine changes from the same release.
+
+### Scanner versions and the Trivy database
+
+Tool versions are pinned in `engine/container/Dockerfile`, so they change only when a release changes the Dockerfile. The image includes a Trivy vulnerability database from build time. During each run, Trivy refreshes it through the egress proxy when it is stale, so you do not need to rebuild the image to get current vulnerability data.
+
+### Upgrading from the old scanner version
+
+Versions before the pull request review pipeline had projects and ad-hoc scans. Migration `0002_pr_review_pipeline` drops the `project`, `scan`, `finding` and `scan_log` tables and rebuilds `repository`. Connected repositories are kept. Export anything you need before you apply it.
+
+The old `openvscan-scanner` Worker and `openvscan-scans` queue are no longer used. Delete them from your Cloudflare account after the upgrade.
+
+### Your own schema changes
+
+If you change the schema in a fork, generate the migration with `pnpm db:generate` and commit it. When you merge a later upstream release that also adds migrations, check the migration numbers and the files in `packages/db/migrations/meta` for conflicts before you apply anything.
+
+## Rotating secrets
+
+### CREDENTIALS_KEY
+
+Agent credentials are encrypted with AES-256-GCM using `CREDENTIALS_KEY`, with each row's id bound in as additional data. There is no re-encryption path. After you change the key, the engine cannot decrypt any credential saved under the old one, and every user has to save their credential again.
+
+Until they do, a run with an agent fails at the AI review step and its check concludes neutral. If you delete the old credentials instead, runs skip the AI review and log that no credential is configured. Scanner results are still published.
+
+<Steps>
+<Step title="Generate a new key">
+
+```bash
+openssl rand -base64 32
+```
+
+</Step>
+<Step title="Set it on both Workers">
+
+```bash
+pnpm --filter openvscan-engine exec wrangler secret put CREDENTIALS_KEY
+pnpm --filter openvscan-web exec wrangler secret put CREDENTIALS_KEY
+```
+
+Enter the same value both times. Each command deploys a new version immediately.
+
+</Step>
+<Step title="Delete the old credentials (recommended)">
+
+```bash
+pnpm --filter openvscan-web exec wrangler d1 execute openvscan --remote --command "DELETE FROM agent_credential"
+```
+
+</Step>
+<Step title="Ask users to save their credentials again">
+
+Each user opens **Settings → AI agents** and saves their Claude or OpenAI credential. It is sealed with the new key.
+
+</Step>
+</Steps>
+
+### GitHub App private key
+
+A GitHub App can have more than one active private key. Generate a new key on the App, set `GITHUB_APP_PRIVATE_KEY` on both Workers with `wrangler secret put`, confirm a review still publishes, then delete the old key on GitHub.
+
+### Webhook secret
+
+Change the secret on the App and set `GITHUB_WEBHOOK_SECRET` on the web Worker. Deliveries in between are rejected with `401`. You can redeliver them from the App's **Advanced** tab.
+
+### GitHub OAuth client secret
+
+Generate a new client secret on the App, set `GITHUB_CLIENT_SECRET` on the web Worker, then delete the old secret on GitHub.
+
+### BETTER_AUTH_SECRET
+
+Better Auth signs session cookies with this secret. Changing it invalidates existing sessions, so every user has to sign in again.
+
+## Licensing
+
+OpenVScan is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only). If you modify it and let others use your modified version over a network, the AGPL requires you to offer them the source code of that version.
+
+The container image bundles third-party tools under their own licenses:
+
+| Component | License |
+|-----------|---------|
+| Trivy | Apache-2.0 |
+| Gitleaks | MIT |
+| Opengrep | LGPL-2.1 |
+| opengrep-rules | LGPL-2.1 with the Commons Clause |
+| Claude Code, Codex | Their vendors' terms |
+
+The Commons Clause restricts selling a product or service whose value derives substantially from the software. Review it before you sell a hosted service built on the bundled rules. To use different rules, set `OPENGREP_RULES_REPO` and `OPENGREP_RULES_COMMIT` in `engine/container/Dockerfile`.
+
+Semgrep's registry rules are not included, because their license does not permit this kind of use. Do not add them to the image.
+
+If you run OpenVScan for other people, check each model provider's terms before you let users connect subscription tokens, such as a Claude subscription token, to a service you operate. API keys are the safer default for a multi-user deployment.

@@ -1,0 +1,109 @@
+---
+title: Scanners
+description: What Trivy, Opengrep and Gitleaks look for, how they are configured, and how their findings are normalized.
+---
+
+Every review runs the scanners you enable for the repository against the checked-out head commit. All three are open source and are baked into the sandbox image, along with their rules and Trivy's vulnerability database. Each runs as a separate step, so one failing does not stop the others.
+
+You choose scanners per repository under **Scanners** in the repository's **Review policy**. See [Repository settings](/docs/repository-settings).
+
+## Trivy
+
+Trivy finds known vulnerabilities in your dependencies and misconfigurations in infrastructure-as-code files.
+
+```bash
+trivy fs --format json --output /workspace/out/trivy.json \
+  --scanners vuln,misconfig \
+  --skip-check-update --skip-java-db-update \
+  --no-progress --quiet --exit-code 0 \
+  /workspace/repo
+```
+
+For dependencies, each vulnerable package produces one finding per vulnerability, reported against the manifest or lockfile it was found in. The title has the form `package@version: title`. The remediation names the fixed version when one exists, for example "Upgrade lodash to 4.17.21 or later." When no fix is published, it says so.
+
+For misconfigurations, OpenVScan uses the checks bundled with the Trivy binary and reports only failed checks, with the line range Trivy points to.
+
+The vulnerability database ships in the image. During the Trivy step, the sandbox may fetch a newer database with GET requests to `mirror.gcr.io`, `ghcr.io` and `pkg-containers.githubusercontent.com`, and nothing else. If that refresh fails, Trivy runs again with `--skip-db-update` against the bundled database, and the run log notes it.
+
+Trivy's own severity is used as is. Anything it does not rate becomes `info`.
+
+## Opengrep
+
+Opengrep is a Semgrep-compatible static analyzer. It finds code-level issues such as SQL and command injection, XSS, SSRF, path traversal and insecure API use.
+
+```bash
+opengrep scan --config /opt/opengrep-rules --json \
+  --output /workspace/out/opengrep.json \
+  --disable-version-check --quiet \
+  --timeout 30 --max-target-bytes 1000000 \
+  /workspace/repo
+```
+
+The rules come from the [opengrep-rules](https://github.com/opengrep/opengrep-rules) repository, bundled into the image. Semgrep's registry rules are not included, because their license does not allow this use.
+
+OpenVScan keeps only results from rules whose `category` metadata is `security`. Best-practice and correctness rules are dropped. The rule pack's ports of Gitleaks rules (`generic.secrets.gitleaks.*`) are also dropped, since Gitleaks covers secrets.
+
+Severity maps from Opengrep's levels:
+
+| Opengrep severity | OpenVScan severity |
+|-------------------|--------------------|
+| `ERROR` with `HIGH` impact and `HIGH` likelihood | critical |
+| `ERROR` | high |
+| `WARNING` | medium |
+| `INFO` | low |
+
+Several rules often fire on the same line, for example four variants of a SQL injection rule. OpenVScan groups results by file, line and vulnerability class (SQL injection, XSS, command injection, code injection, SSRF, path traversal, or otherwise the CWE or rule id). It keeps the most severe result in each group and lists the other rule ids with it.
+
+Opengrep spends at most 30 seconds running a rule on a single file, and skips files larger than 1,000,000 bytes.
+
+## Gitleaks
+
+Gitleaks finds hard-coded secrets such as API keys, tokens and private keys.
+
+```bash
+gitleaks dir /workspace/repo \
+  --report-format json --report-path /workspace/out/gitleaks.json \
+  --redact --no-banner --exit-code 0 --log-level warn
+```
+
+It scans the files in the checked-out tree. Because checkout fetches a single commit, git history is not scanned.
+
+`--redact` keeps the secret value out of Gitleaks' output, so OpenVScan never sees or stores it. Every leak is reported as `high` severity with CWE-798, and the remediation tells you to revoke and rotate the credential, remove it from the code, and load it from a secret manager or environment variable.
+
+## Normalized findings
+
+Each scanner's JSON output is parsed into the same shape:
+
+| Field | Meaning |
+|-------|---------|
+| Source | `trivy`, `opengrep`, `gitleaks`, or `ai` for findings from the AI review |
+| Rule id | The scanner's rule or vulnerability id, such as a CVE |
+| Title and description | What was found |
+| Severity | `critical`, `high`, `medium`, `low` or `info` |
+| File and lines | Path relative to the repository root, with start and end lines when known |
+| CWE | Normalized to the form `CWE-79` when the scanner provides one |
+| Remediation | How to fix it, when known |
+
+The raw JSON from each scanner is kept as an artifact of the review.
+
+Each finding also gets a fingerprint built from the scanner, the rule or CWE, and the file path, without line numbers. The fingerprint stays the same when code moves, so a later review of the same pull request can tell which findings it has already commented on.
+
+## Finding cap
+
+Each scanner can record at most 500 findings per review. If a scanner reports more, OpenVScan keeps the 500 most severe.
+
+## In the diff
+
+For pull request reviews, each finding is marked as in the diff or not. This decides whether it can fail the check and whether it gets an inline comment.
+
+- A finding with a line number is in the diff when its line range overlaps a line the pull request added or modified.
+- A finding with no line number, such as a dependency vulnerability, is in the diff when the pull request changed its file at all. The same applies to any file GitHub shows without a patch, such as binary or very large files.
+- Findings in files the pull request deleted are never in the diff.
+
+<Callout type="note" title="Lockfile changes">
+Dependency vulnerabilities are reported against the manifest or lockfile, with no line number. If a pull request touches a lockfile, every known vulnerability in that lockfile counts as in the diff, including ones that predate the pull request.
+</Callout>
+
+Findings outside the diff are still reported in the summary comment as pre-existing, but they never fail the check.
+
+Branch reviews have no diff. Every finding counts toward the conclusion.

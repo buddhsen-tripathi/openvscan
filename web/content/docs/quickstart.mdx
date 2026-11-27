@@ -1,0 +1,83 @@
+---
+title: Quickstart
+description: Install the GitHub App, connect a repository and get your first pull request reviewed.
+---
+
+This guide takes you from a new account to a reviewed pull request. It uses the hosted version at openvscan.com. On a self-hosted deployment the steps are the same once an operator has set it up (see [Self-hosting](/docs/self-hosting)).
+
+<Steps>
+<Step title="Sign in with GitHub">
+
+Go to openvscan.com and choose **Continue with GitHub**, or **Sign up with GitHub** if you are new.
+
+Use GitHub rather than email and password. When you install the GitHub App, OpenVScan checks with GitHub that your account can manage that installation, and it needs your GitHub sign-in to do that. Without it, the install step fails with "Sign in with GitHub (or link your GitHub account) before connecting an installation."
+
+</Step>
+<Step title="Install the GitHub App">
+
+Open **Repositories** in the sidebar and click **Install GitHub App**. On GitHub, pick the account or organization and the repositories OpenVScan may access.
+
+The App asks for these repository permissions:
+
+| Permission | Access |
+|------------|--------|
+| Checks | Read and write |
+| Pull requests | Read and write |
+| Contents | Read |
+| Metadata | Read |
+
+GitHub sends you back to **Repositories** with the message "GitHub App installed. Connect the repositories you want reviewed below."
+
+</Step>
+<Step title="Connect a repository">
+
+Under **Add a repository**, click **Connect** next to each repository you want reviewed. Only repositories the App can see are listed. To add more, use **Manage on GitHub** at the top of the page.
+
+A newly connected repository uses this policy:
+
+- Every pull request is reviewed on open, push, reopen and ready for review.
+- Draft pull requests are skipped.
+- Trivy, Opengrep and Gitleaks are all on.
+- The AI reviewer is off (**None**).
+- The check fails on findings of **High** severity or above.
+
+You can change any of these later. See [Repository settings](/docs/repository-settings).
+
+</Step>
+<Step title="Add an agent credential (optional)">
+
+Skip this step if you only want scanner results. Reviews work without an agent.
+
+To add the AI review, open **Settings** and go to the **AI agents** section:
+
+- For **Claude Code**, choose **Claude subscription token** (run `claude setup-token` and paste the token) or **Anthropic API key**.
+- For **Codex**, use an **OpenAI API key**.
+
+Paste it into **Token** and click **Save credential**.
+
+Then turn the agent on for the repository. Open the repository from **Repositories**, set **AI reviewer** to **Claude Code** or **Codex** in the **Review policy** panel, and click **Save policy**. Saving a credential alone does not enable the AI review.
+
+See [Agent credentials](/docs/agent-credentials) for how the credential is stored and used.
+
+</Step>
+<Step title="Open a pull request">
+
+Push a branch and open a pull request against the connected repository, or push a new commit to an existing one. The review starts when GitHub delivers the webhook.
+
+If the pull request is a draft, it is reviewed once you mark it ready for review. To review drafts too, turn off **Skip drafts**.
+
+</Step>
+<Step title="Read the results">
+
+On GitHub, look for the `OpenVScan Security Review` check, inline comments on the changed lines, and the OpenVScan summary comment. The check's details link opens the review in the dashboard.
+
+In the dashboard, **Reviews** lists every review across your repositories. Open one to see its findings, the AI summary and risk rating, each scanner's result and the run log. From there you can **Re-run** a finished review or **Cancel** one in progress.
+
+</Step>
+</Steps>
+
+## Next steps
+
+- [How a review works](/docs/how-a-review-works) explains what triggers a review and what each step does.
+- [Results on GitHub](/docs/results-on-github) explains when the check passes or fails.
+- [Repository settings](/docs/repository-settings) covers every per-repository option.

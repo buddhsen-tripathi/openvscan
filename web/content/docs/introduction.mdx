@@ -1,0 +1,50 @@
+---
+title: Introduction
+description: OpenVScan reviews GitHub pull requests for security issues using open-source scanners and your own coding agent.
+---
+
+OpenVScan is an open-source security reviewer for GitHub pull requests. When a pull request is opened or updated, it checks out the head commit in an isolated container and runs Trivy, Opengrep and Gitleaks. If you turn on the AI reviewer, Claude Code or Codex then triages those findings and reviews the diff, using your own Claude subscription token, Anthropic API key or OpenAI API key.
+
+It runs entirely on Cloudflare (Workers, Workflows, Containers, D1 and R2) and is licensed under AGPL-3.0.
+
+## What a review produces
+
+On the pull request, OpenVScan publishes:
+
+- A check run named `OpenVScan Security Review` on the head commit. It concludes as pass, fail or neutral and carries line annotations for each finding.
+- Inline review comments on the changed lines. When the agent proposes an exact fix, the comment includes a GitHub suggestion you can apply in one click.
+- A single summary comment that is edited in place on every new review, so the pull request never collects a pile of bot comments.
+
+In the dashboard, each review shows its findings, the agent's summary and risk rating, per-scanner results and the full run log.
+
+A review fails the check only for a finding that is at or above the repository's fail threshold, sits on a line the pull request changed, and was not dismissed by the agent as a false positive. Issues that already existed elsewhere in the repository are reported but never block. See [Results on GitHub](/docs/results-on-github) for the exact rule.
+
+## What it looks for
+
+| Source | Finds |
+|--------|-------|
+| Trivy | Vulnerable dependencies and infrastructure-as-code misconfigurations |
+| Opengrep | Code-level security issues such as injection, XSS, SSRF and path traversal |
+| Gitleaks | Hard-coded secrets and credentials |
+| AI review (optional) | A verdict on each scanner finding, plus issues the scanners missed in the changed code |
+
+Each scanner and the AI reviewer can be switched on or off per repository. See [Scanners](/docs/scanners) and [AI review](/docs/ai-review).
+
+## Scope
+
+OpenVScan reviews GitHub pull requests through a GitHub App. You can also review a branch on demand from the dashboard. A branch review scans the whole tree at the branch's latest commit and posts a check run, but no pull request comments.
+
+## Hosted or self-hosted
+
+The hosted version runs at openvscan.com. Sign in, install the GitHub App on the repositories you choose, and connect them in the dashboard.
+
+You can also run OpenVScan on your own Cloudflare account. It needs the Workers Paid plan for Containers. See [Self-hosting](/docs/self-hosting).
+
+In both cases the AI step runs on your credential, so model usage is billed by Anthropic or OpenAI to you, or counted against your Claude subscription.
+
+## Next steps
+
+- [Quickstart](/docs/quickstart): get your first pull request reviewed.
+- [How a review works](/docs/how-a-review-works): the pipeline from webhook to published results.
+- [Security model](/docs/security-model): how the sandbox limits what a compromised agent can do.
+- [Agent credentials](/docs/agent-credentials): connect Claude Code or Codex.
