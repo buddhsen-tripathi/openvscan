@@ -1,0 +1,42 @@
+[
+ {
+  "RuleID": "aws-access-token",
+  "Description": "Identified a pattern that may indicate AWS credentials, risking unauthorized cloud resource access and data breaches on AWS platforms.",
+  "StartLine": 1,
+  "EndLine": 1,
+  "StartColumn": 28,
+  "EndColumn": 47,
+  "Match": "REDACTED",
+  "Secret": "REDACTED",
+  "File": "/workspace/repo/app/config.js",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 3.7841837,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "/workspace/repo/app/config.js:aws-access-token:1"
+ },
+ {
+  "RuleID": "stripe-access-token",
+  "Description": "Found a Stripe Access Token, posing a risk to payment processing services and sensitive financial data.",
+  "StartLine": 3,
+  "EndLine": 3,
+  "StartColumn": 18,
+  "EndColumn": 95,
+  "Match": "REDACTED\"",
+  "Secret": "REDACTED",
+  "File": "/workspace/repo/app/config.js",
+  "SymlinkFile": "",
+  "Commit": "",
+  "Entropy": 5.3508215,
+  "Author": "",
+  "Email": "",
+  "Date": "",
+  "Message": "",
+  "Tags": [],
+  "Fingerprint": "/workspace/repo/app/config.js:stripe-access-token:3"
+ }
+]

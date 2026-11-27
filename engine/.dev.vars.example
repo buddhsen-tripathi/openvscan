@@ -1,0 +1,7 @@
+# Engine Worker local secrets (copy to .dev.vars). Production: wrangler secret put <NAME>
+GITHUB_APP_ID=123456
+# The GitHub App private key: the .pem file, newlines written as \n.
+GITHUB_APP_PRIVATE_KEY=
+# MUST equal the web Worker's CREDENTIALS_KEY (32 random bytes): openssl rand -base64 32
+CREDENTIALS_KEY=
+APP_URL=http://localhost:3000
