@@ -1,53 +1,59 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import Link from "@/components/AppLink";
 import {
-  AuthError,
   AuthShell,
   GithubAuthButton,
+  oauthErrorMessage,
   PasswordField,
 } from "@/components/auth/AuthShell";
+import { Notice } from "@/components/dashboard/ui";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/Input";
+import { Field, Input } from "@/components/ui/Input";
 import { signUp } from "@/lib/auth-client";
-import { getSession } from "@/src/lib/session";
+import { isSignedIn, safeRedirect } from "@/src/lib/session";
 
 export const Route = createFileRoute("/signup")({
-  // Already signed in? Skip the form and go to the dashboard.
-  beforeLoad: async () => {
-    if (await getSession()) {
-      throw redirect({ to: "/dashboard" });
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { redirect?: string; error?: string } => ({
+    redirect: safeRedirect(search.redirect) ?? undefined,
+    error: typeof search.error === "string" ? search.error : undefined,
+  }),
+  // Already signed in? Skip the form and go where the user was headed.
+  beforeLoad: async ({ search }) => {
+    if (await isSignedIn()) {
+      throw redirect({ href: search.redirect ?? "/dashboard" });
     }
   },
   component: SignUpPage,
 });
 
 function SignUpPage() {
+  const search = Route.useSearch();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    oauthErrorMessage(search.error),
+  );
   const navigate = useNavigate();
 
   return (
     <AuthShell
       title="Create your account"
       subtitle="Start finding vulnerabilities before they ship."
-      footer={
-        <>
-          Already have an account?{" "}
-          <Link
-            href="/signin"
-            className="font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            Sign in
-          </Link>
-        </>
-      }
+      footer={{
+        prompt: "Already have an account?",
+        href: "/signin",
+        label: "Sign in",
+      }}
     >
-      <GithubAuthButton label="Sign up with GitHub" />
+      <GithubAuthButton
+        label="Sign up with GitHub"
+        redirectTo={search.redirect}
+      />
 
       <form
         className="mt-4 space-y-4"
@@ -64,7 +70,8 @@ function SignUpPage() {
             fetchOptions: {
               onSuccess: () => {
                 setLoading(false);
-                navigate({ to: "/dashboard" });
+                if (search.redirect) window.location.href = search.redirect;
+                else navigate({ to: "/dashboard" });
               },
               onError: (ctx) => {
                 setLoading(false);
@@ -74,12 +81,9 @@ function SignUpPage() {
           });
         }}
       >
-        {error && <AuthError message={error} />}
+        {error && <Notice tone="danger">{error}</Notice>}
 
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground" htmlFor="name">
-            Name
-          </label>
+        <Field label="Name" htmlFor="name">
           <Input
             id="name"
             type="text"
@@ -89,15 +93,9 @@ function SignUpPage() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
-        </div>
+        </Field>
 
-        <div className="space-y-1.5">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="email"
-          >
-            Email
-          </label>
+        <Field label="Email" htmlFor="email">
           <Input
             id="email"
             type="email"
@@ -107,15 +105,9 @@ function SignUpPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-        </div>
+        </Field>
 
-        <div className="space-y-1.5">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor="password"
-          >
-            Password
-          </label>
+        <Field label="Password" htmlFor="password">
           <PasswordField
             id="password"
             required
@@ -125,7 +117,7 @@ function SignUpPage() {
             show={showPassword}
             onToggle={() => setShowPassword((v) => !v)}
           />
-        </div>
+        </Field>
 
         <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading ? "Creating account…" : "Create account"}
