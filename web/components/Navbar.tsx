@@ -1,41 +1,56 @@
-"use client";
-
-import { AnimatePresence, motion } from "framer-motion";
-import { Star } from "lucide-react";
+import { useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import Image from "@/components/AppImage";
 import Link from "@/components/AppLink";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { Wordmark } from "@/components/brand/Mark";
+import { docSlugFromPath, docTab } from "@/components/docs/pages";
+import { Github, Menu, Star, X } from "@/components/icons";
+import {
+  Container,
+  DOCS_HREF,
+  SELF_HOST_HREF,
+} from "@/components/landing/primitives";
+import { REPO_SLUG, REPO_URL } from "@/components/site";
 import { cn } from "@/lib/utils";
-import { MenuIcon } from "./ui/Icons";
 
-const GITHUB_REPO = "Buddhsen-tripathi/openvscan";
+const NAV = [
+  { href: "/", label: "Product", match: (p: string) => p === "/" },
+  {
+    href: DOCS_HREF,
+    label: "Docs",
+    match: (p: string) =>
+      p.startsWith("/docs") && docTab(docSlugFromPath(p)).id === "docs",
+  },
+  {
+    href: SELF_HOST_HREF,
+    label: "Self-hosting",
+    match: (p: string) =>
+      p.startsWith("/docs") && docTab(docSlugFromPath(p)).id === "self-hosting",
+  },
+];
 
-function formatStarCount(count: number): string {
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
-  return count.toString();
+function formatStars(count: number): string {
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
 }
 
-const Navbar = () => {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+export default function Navbar() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [starCount, setStarCount] = useState<number | null>(null);
+  const [stars, setStars] = useState<number | null>(null);
 
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 50);
-    };
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => {
-    fetch(`https://api.github.com/repos/${GITHUB_REPO}`)
+    fetch(`https://api.github.com/repos/${REPO_SLUG}`)
       .then((res) => res.json() as Promise<{ stargazers_count?: number }>)
-      .then((data) => {
-        if (typeof data.stargazers_count === "number") {
-          setStarCount(data.stargazers_count);
-        }
+      .then((d) => {
+        if (typeof d.stargazers_count === "number")
+          setStars(d.stargazers_count);
       })
       .catch(() => {});
   }, []);
@@ -43,122 +58,90 @@ const Navbar = () => {
   return (
     <header
       className={cn(
-        "fixed top-6 left-0 right-0 z-50 mx-auto max-w-5xl transition-all duration-300",
-        scrolled ? "px-4" : "px-0",
+        "fixed inset-x-0 top-0 z-50 border-b transition-colors duration-300",
+        scrolled || open
+          ? "border-rule bg-paper/85 backdrop-blur-xl"
+          : "border-transparent bg-paper",
       )}
     >
-      <div
-        className={cn(
-          "flex h-14 items-center justify-between rounded-full border px-6 backdrop-blur-xl transition-all",
-          scrolled
-            ? "border-border/50 bg-background/80 shadow-lg"
-            : "border-transparent bg-transparent",
-        )}
-      >
-        <Link href="/" className="flex items-center gap-2">
-          <Image
-            src="/logo.png"
-            alt="OpenVScan Logo"
-            width={24}
-            height={24}
-            className="h-6 w-6 object-contain"
-          />
-          <span className="text-lg font-bold tracking-tight text-foreground">
-            OpenVScan
-          </span>
+      <Container className="flex h-16 items-center gap-10">
+        <Link href="/" className="text-ink" aria-label="OpenVScan home">
+          <Wordmark className="text-[23px]" />
         </Link>
 
-        <nav className="hidden md:flex items-center gap-8">
-          {["Features", "How It Works", "Docs"].map((item) => (
+        <nav className="hidden items-center gap-7 md:flex">
+          {NAV.map((item) => (
             <Link
-              key={item}
-              href={
-                item === "Docs"
-                  ? "/docs"
-                  : `/#${item.toLowerCase().replace(/\s+/g, "-")}`
-              }
-              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              key={item.href}
+              href={item.href}
+              aria-current={item.match(pathname) ? "page" : undefined}
+              className="text-[15px] text-stone transition-colors hover:text-ink aria-[current=page]:text-ink"
             >
-              {item}
+              {item.label}
             </Link>
           ))}
         </nav>
 
-        <div className="flex items-center gap-4">
+        <div className="ml-auto flex items-center gap-1.5">
           <Link
-            href={`https://github.com/${GITHUB_REPO}`}
+            href={REPO_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden md:inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-muted/50 px-3 py-1 text-sm font-medium text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+            aria-label="OpenVScan on GitHub"
+            className="hidden h-9 items-center gap-1.5 rounded-[4px] px-2.5 text-[14px] text-ink-2 transition-colors hover:bg-ink/[0.04] md:inline-flex"
           >
-            <Star className="w-3.5 h-3.5" />
-            {starCount !== null ? formatStarCount(starCount) : "—"}
+            <Github size={16} />
+            <Star size={13} className="text-stone" />
+            {stars !== null ? formatStars(stars) : "Star"}
           </Link>
-          <ThemeToggle className="hidden rounded-full md:inline-flex" />
           <Link
             href="/signin"
-            className="hidden md:inline-flex items-center justify-center rounded-full bg-primary px-5 py-1.5 text-sm font-semibold text-primary-foreground transition-colors duration-300 hover:bg-primary/90"
+            className="hidden h-9 items-center rounded-[4px] bg-ink px-3.5 text-[14px] font-medium text-paper transition-colors hover:bg-ink-2 md:inline-flex"
           >
-            Get Started
+            Sign in
           </Link>
           <button
             type="button"
-            className="md:hidden p-2 text-muted-foreground"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            className="grid size-9 place-items-center rounded-[4px] text-ink md:hidden"
+            onClick={() => setOpen((v) => !v)}
           >
-            <MenuIcon className="h-6 w-6" />
+            {open ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
-      </div>
+      </Container>
 
-      {/* Mobile Menu */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="absolute top-16 left-4 right-4 rounded-2xl border border-border bg-background/90 backdrop-blur-xl p-4 shadow-2xl"
-          >
-            <nav className="flex flex-col space-y-4">
-              {["Features", "How It Works", "Docs"].map((item) => (
-                <Link
-                  key={item}
-                  href={
-                    item === "Docs"
-                      ? "/docs"
-                      : `/#${item.toLowerCase().replace(/\s+/g, "-")}`
-                  }
-                  className="text-base font-medium text-muted-foreground hover:text-foreground"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  {item}
-                </Link>
-              ))}
+      {open && (
+        <nav className="border-t border-rule md:hidden">
+          <Container className="flex flex-col py-3">
+            {NAV.map((item) => (
               <Link
-                href={`https://github.com/${GITHUB_REPO}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center text-base font-medium text-muted-foreground hover:text-foreground"
-                onClick={() => setIsMobileMenuOpen(false)}
+                key={item.href}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                className="py-2.5 text-[16px] text-ink-2"
               >
-                <Star className="w-4 h-4 mr-2" />
-                Stars{" "}
-                {starCount !== null ? `(${formatStarCount(starCount)})` : ""}
+                {item.label}
+              </Link>
+            ))}
+            <div className="mt-3 grid grid-cols-2 gap-2 pb-2">
+              <Link
+                href={REPO_URL}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] border border-ink text-[15px] text-ink"
+              >
+                <Github size={15} /> GitHub
               </Link>
               <Link
                 href="/signin"
-                className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"
-                onClick={() => setIsMobileMenuOpen(false)}
+                className="inline-flex h-10 items-center justify-center rounded-[4px] bg-ink text-[15px] font-medium text-paper"
               >
-                Get Started
+                Sign in
               </Link>
-            </nav>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+          </Container>
+        </nav>
+      )}
     </header>
   );
-};
-
-export default Navbar;
+}

@@ -1,143 +1,66 @@
-import { Github } from "lucide-react";
-import Image from "@/components/AppImage";
 import Link from "@/components/AppLink";
+import { Wordmark } from "@/components/brand/Mark";
+import { Container } from "@/components/landing/primitives";
+import { ThemeSwitch } from "@/components/ThemeSwitch";
 
-const socialLinks = [
+const COLUMNS = [
   {
-    href: "https://github.com/Buddhsen-tripathi/openvscan",
-    icon: <Github className="w-5 h-5" />,
-    label: "GitHub",
+    heading: "Product",
+    links: [
+      { href: "/#product", label: "How it works" },
+      { href: "/docs/security-model", label: "Security" },
+      { href: "/docs/faq", label: "FAQ" },
+    ],
   },
-  // Add other social links here
-];
-
-const footerNav = {
-  product: [
-    { href: "/#features", label: "Features" },
-    { href: "/docs", label: "Docs" },
-  ],
-  community: [
-    {
-      href: "https://github.com/Buddhsen-tripathi/openvscan",
-      label: "Star on GitHub",
-    },
-    {
-      href: "https://github.com/Buddhsen-tripathi/openvscan/issues",
-      label: "Report an Issue",
-    },
-    {
-      href: "https://github.com/Buddhsen-tripathi/openvscan/discussions",
-      label: "Discussions",
-    },
-  ],
-  company: [
-    { href: "/about", label: "About" },
-    { href: "/blog", label: "Blog" },
-    { href: "/contact", label: "Contact" },
-  ],
-};
+  {
+    heading: "Developers",
+    links: [
+      { href: "/docs", label: "Documentation" },
+      { href: "/docs/quickstart", label: "Quickstart" },
+      { href: "/docs/self-hosting", label: "Self-hosting" },
+    ],
+  },
+] as const;
 
 export default function Footer() {
   return (
-    <footer className="bg-background border-t border-border">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-          {/* Logo and description */}
-          <div className="col-span-2 md:col-span-1">
-            <Link href="/" className="flex items-center space-x-3 mb-4">
-              <Image
-                src="/logo.png"
-                alt="OpenVScan"
-                width={32}
-                height={32}
-                className="rounded-md"
-              />
-              <span className="text-xl font-semibold text-foreground">
-                OpenVScan
-              </span>
-            </Link>
-            <p className="text-sm text-muted-foreground">
-              Smarter, faster pre-production security testing.
+    <footer className="bg-night text-day dark:border-t dark:border-white/10">
+      <Container className="pt-16 pb-8">
+        <div className="flex flex-col gap-12 md:flex-row md:justify-between">
+          <div className="max-w-sm">
+            <Wordmark className="text-[26px] text-day" />
+            <p className="mt-4 text-[14px] leading-relaxed text-day/55">
+              Open-source security review for GitHub pull requests. Scanners
+              plus your own coding agent.
             </p>
           </div>
-
-          {/* Navigation Links */}
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">
-              Product
-            </h3>
-            <ul className="space-y-3">
-              {footerNav.product.map((item) => (
-                <li key={item.label}>
-                  <Link
-                    href={item.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">
-              Community
-            </h3>
-            <ul className="space-y-3">
-              {footerNav.community.map((item) => (
-                <li key={item.label}>
-                  <Link
-                    href={item.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-4">
-              Company
-            </h3>
-            <ul className="space-y-3">
-              {footerNav.company.map((item) => (
-                <li key={item.label}>
-                  <Link
-                    href={item.href}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Bottom bar */}
-        <div className="mt-16 pt-8 border-t border-border flex flex-col sm:flex-row justify-between items-center">
-          <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} OpenVScan. All rights reserved.
-          </p>
-          <div className="flex items-center space-x-4 mt-4 sm:mt-0">
-            {socialLinks.map((social) => (
-              <Link
-                key={social.label}
-                href={social.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label={social.label}
-              >
-                {social.icon}
-              </Link>
+          <div className="grid grid-cols-2 gap-x-16 gap-y-10 text-[14px]">
+            {COLUMNS.map((column) => (
+              <div key={column.heading}>
+                <h2 className="eyebrow mb-4 text-[11px] text-day/40">
+                  {column.heading}
+                </h2>
+                <ul className="space-y-2.5">
+                  {column.links.map((link) => (
+                    <li key={link.href}>
+                      <Link
+                        href={link.href}
+                        className="text-day/75 transition-colors hover:text-day"
+                      >
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
           </div>
         </div>
-      </div>
+        <div className="mt-14 flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-6 text-[12.5px] text-day/45 sm:flex-row sm:items-center">
+          <span>© {new Date().getFullYear()} OpenVScan · AGPL-3.0</span>
+          <ThemeSwitch tone="night" />
+        </div>
+      </Container>
     </footer>
   );
 }

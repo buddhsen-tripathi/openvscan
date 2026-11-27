@@ -1,0 +1,135 @@
+---
+title: AI review
+description: How Claude Code or Codex triages scanner findings and reviews the diff, and what it can and cannot do.
+---
+
+The AI review is an optional step that runs after the scanners. OpenVScan starts Claude Code or Codex headless inside the same sandbox, gives it the checked-out code, the pull request diff and the scanner findings, and asks for a structured JSON review. The agent runs on the credential of the person who connected the repository.
+
+## Turning it on
+
+The AI review runs when both of these are true:
+
+- The repository's **AI reviewer** is set to **Claude Code** or **Codex**. See [Repository settings](/docs/repository-settings).
+- The person who connected the repository has saved a matching credential under **Settings** in the **AI agents** section. See [Agent credentials](/docs/agent-credentials).
+
+If the credential is missing, the review runs the scanners only. The summary comment then says "AI review did not complete" with a pointer to **Settings → AI agents**.
+
+## What the agent is given
+
+The repository is checked out at the pull request's head commit in the agent's working directory. Alongside it, OpenVScan writes three files to `/workspace/.openvscan`:
+
+| File | Contents |
+|------|----------|
+| `PROMPT.md` | The review instructions, the trust boundary, the task list and the output format |
+| `pr.diff` | The pull request's unified diff, up to 400,000 bytes. Files past that limit are listed as omitted, and the agent is told to read them directly. |
+| `scanner-findings.json` | Up to 200 scanner findings, those in the diff first, then by severity. Each has an `id`, source, rule id, severity, title, file, line, `inDiff` flag and the first 1,500 characters of its description. |
+
+The prompt also includes the repository name, head commit and branch, the pull request number, title, author and the first 4,000 characters of its description, and the list of changed files (up to 300). If you set **Instructions for the reviewer** on the repository, they are added at the end under "Additional instructions from the repository owner".
+
+For a branch review there is no pull request. The agent is asked to review the whole repository, starting with the most security-sensitive code.
+
+## What it is asked to do
+
+1. Triage every scanner finding by reading the code, and give each one a verdict:
+   - `confirmed`: a real, reachable issue.
+   - `false_positive`: not exploitable here, for example a test fixture, dead code or sanitized input.
+   - `needs_review`: it cannot decide without information it does not have.
+
+   It may also correct a finding's severity.
+2. Review the changed code for vulnerabilities the scanners missed, including injection, XSS, SSRF, path traversal, broken authentication or authorization, insecure deserialization, weak crypto or randomness, secrets, CSRF, open redirects, race conditions, unsafe defaults, risky new dependencies and infrastructure misconfiguration.
+3. Report only issues it can justify from the code with a concrete exploit scenario. No style comments, no generic advice, and no duplicates of scanner findings.
+4. Give each new finding a short remediation, and a replacement snippet only when the fix is small and certain.
+
+It is told not to modify any files, not to run the project's code, build or tests, and not to use the network. Read-only shell commands such as `grep`, `find`, `cat`, `git log` and `git show` are allowed.
+
+## What it returns
+
+The agent writes a single JSON object to `/workspace/.openvscan/review.json`:
+
+```json
+{
+  "summary": "The change adds a file download endpoint. The path is joined from user input without normalization.",
+  "risk": "high",
+  "triage": [
+    {
+      "id": "3f1c…",
+      "verdict": "false_positive",
+      "reasoning": "The flagged query in tests/fixtures/db.py is test data and is never executed.",
+      "severity": "low"
+    }
+  ],
+  "findings": [
+    {
+      "title": "Path traversal in file download",
+      "severity": "high",
+      "file": "src/routes/files.ts",
+      "line": 42,
+      "endLine": 44,
+      "cwe": "CWE-22",
+      "description": "req.query.name is joined onto the uploads directory without normalization, so ../ sequences can read any file the process can read.",
+      "remediation": "Resolve the path and reject it unless it stays inside the uploads directory.",
+      "suggestion": "const target = path.resolve(UPLOADS, name);\nif (!target.startsWith(UPLOADS + path.sep)) return res.sendStatus(400);"
+    }
+  ]
+}
+```
+
+| Field | Rules |
+|-------|-------|
+| `summary` | Required. 1 to 3 short paragraphs, up to 4,000 characters. |
+| `risk` | Required. One of `none`, `low`, `medium`, `high`, `critical`. |
+| `triage` | Up to 500 entries. Each has `id`, `verdict`, `reasoning` (up to 2,000 characters) and an optional `severity`. |
+| `findings` | Up to 100 new issues. Each needs `title`, `severity`, `file` and `description`. `line`, `endLine`, `cwe` (in the form `CWE-89`), `remediation` and `suggestion` are optional. |
+
+OpenVScan validates the file against this schema. It tolerates one Markdown code fence around the JSON and nothing else. If the file is missing, larger than 2 MB, or fails validation, the AI review is marked as not completed with the reason, and the scanner results are still published.
+
+## How the results are applied
+
+- Verdicts are accepted only for finding ids that were in `scanner-findings.json`. Any other id is ignored.
+- A `false_positive` finding stays visible in the dashboard under **Dismissed by AI**. It no longer counts toward the conclusion, annotations or inline comments.
+- A `needs_review` finding counts the same as an unreviewed one.
+- A corrected severity replaces the scanner's severity.
+- New findings are stored with source `ai` and verdict `confirmed`. Whether they are in the diff is decided the same way as for scanner findings.
+- The summary and risk rating appear in the summary comment, the check run and the dashboard.
+
+See [Results on GitHub](/docs/results-on-github) for how verdicts affect pass and fail.
+
+## Untrusted input
+
+The agent reads content an attacker can control: the code, the pull request title and description, code comments, commit messages and scanner output. The prompt labels all of it as untrusted data, places the pull request description inside a delimited `<pr_description>` block, and tells the agent never to follow instructions found there. It also asks the agent to report any attempt to manipulate the review as a finding.
+
+OpenVScan does not rely on the prompt alone. During the AI step the sandbox can reach only the model API, the agent has no GitHub token, its only output is the JSON file above, and everything posted to GitHub is sanitized. See [Security model](/docs/security-model).
+
+## Commands
+
+Claude Code runs as:
+
+```bash
+claude --print --output-format stream-json --verbose \
+  --dangerously-skip-permissions --no-session-persistence \
+  --model <model> \
+  -- "Follow the instructions in /workspace/.openvscan/PROMPT.md exactly. Write your result to /workspace/.openvscan/review.json."
+```
+
+Its environment sets `IS_SANDBOX=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `DISABLE_AUTOUPDATER=1` and `DISABLE_TELEMETRY=1`, plus a placeholder `CLAUDE_CODE_OAUTH_TOKEN` (subscription token) or `ANTHROPIC_API_KEY` (API key).
+
+Codex runs as:
+
+```bash
+codex exec --json --ephemeral --skip-git-repo-check \
+  --dangerously-bypass-approvals-and-sandbox \
+  --output-last-message /workspace/.openvscan/last-message.txt \
+  --model <model> \
+  --config analytics.enabled=false \
+  --config check_for_update_on_startup=false \
+  --config features.plugins=false \
+  -- "Follow the instructions in /workspace/.openvscan/PROMPT.md exactly. Write your result to /workspace/.openvscan/review.json."
+```
+
+Its environment sets placeholder `OPENAI_API_KEY` and `CODEX_API_KEY` values.
+
+`--model` is passed only when you set **Model** on the repository. Both agents skip their own permission prompts because the sandbox is the permission boundary: it has no general network access and holds no secrets. The real credential is added by the egress proxy on requests to the model API.
+
+## Time limit
+
+OpenVScan checks on the agent every 30 seconds, up to 50 times. If it is still running after about 25 minutes, it is stopped and the review is published without AI results, with the reason "timed out after 25 minutes".

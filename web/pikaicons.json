@@ -1,0 +1,156 @@
+{
+  "framework": "react-tsx",
+  "dir": "components/icons/pika",
+  "importAlias": "@/components/icons/pika",
+  "variant": "stroke",
+  "icons": {
+    "alert-triangle": {
+      "name": "alert-triangle",
+      "variant": "stroke"
+    },
+    "arrow-left": {
+      "name": "arrow-left",
+      "variant": "stroke"
+    },
+    "arrow-right": {
+      "name": "arrow-right",
+      "variant": "stroke"
+    },
+    "bot": {
+      "name": "bot",
+      "variant": "stroke"
+    },
+    "burger-menu-three": {
+      "name": "burger-menu-three",
+      "variant": "stroke"
+    },
+    "chat-default": {
+      "name": "chat-default",
+      "variant": "stroke"
+    },
+    "check-tick-circle": {
+      "name": "check-tick-circle",
+      "variant": "stroke"
+    },
+    "chevron-down": {
+      "name": "chevron-down",
+      "variant": "stroke"
+    },
+    "chevron-right": {
+      "name": "chevron-right",
+      "variant": "stroke"
+    },
+    "code": {
+      "name": "code",
+      "variant": "stroke"
+    },
+    "copy-default": {
+      "name": "copy-default",
+      "variant": "stroke"
+    },
+    "delete-dustbin-01": {
+      "name": "delete-dustbin-01",
+      "variant": "stroke"
+    },
+    "external-link-square": {
+      "name": "external-link-square",
+      "variant": "stroke"
+    },
+    "filter-horizontal": {
+      "name": "filter-horizontal",
+      "variant": "stroke"
+    },
+    "folder-default": {
+      "name": "folder-default",
+      "variant": "stroke"
+    },
+    "git-branch": {
+      "name": "git-branch",
+      "variant": "stroke"
+    },
+    "github": {
+      "name": "github",
+      "variant": "stroke"
+    },
+    "grid-dashboard-02": {
+      "name": "grid-dashboard-02",
+      "variant": "stroke"
+    },
+    "information-circle": {
+      "name": "information-circle",
+      "variant": "stroke"
+    },
+    "key-left": {
+      "name": "key-left",
+      "variant": "stroke"
+    },
+    "laptop": {
+      "name": "laptop",
+      "variant": "stroke"
+    },
+    "lock-close": {
+      "name": "lock-close",
+      "variant": "stroke"
+    },
+    "log-out-right": {
+      "name": "log-out-right",
+      "variant": "stroke"
+    },
+    "minus-default": {
+      "name": "minus-default",
+      "variant": "stroke"
+    },
+    "moon": {
+      "name": "moon",
+      "variant": "stroke"
+    },
+    "multiple-cross-cancel-circle": {
+      "name": "multiple-cross-cancel-circle",
+      "variant": "stroke"
+    },
+    "multiple-cross-cancel-default": {
+      "name": "multiple-cross-cancel-default",
+      "variant": "stroke"
+    },
+    "play-circle": {
+      "name": "play-circle",
+      "variant": "stroke"
+    },
+    "plus-default": {
+      "name": "plus-default",
+      "variant": "stroke"
+    },
+    "refresh": {
+      "name": "refresh",
+      "variant": "stroke"
+    },
+    "search-default": {
+      "name": "search-default",
+      "variant": "stroke"
+    },
+    "server": {
+      "name": "server",
+      "variant": "stroke"
+    },
+    "shield-check": {
+      "name": "shield-check",
+      "variant": "stroke"
+    },
+    "sparkle-ai-01": {
+      "name": "sparkle-ai-01",
+      "variant": "stroke"
+    },
+    "star": {
+      "name": "star",
+      "variant": "stroke"
+    },
+    "sun": {
+      "name": "sun",
+      "variant": "stroke"
+    },
+    "user-default": {
+      "name": "user-default",
+      "variant": "stroke"
+    }
+  }
+}

@@ -10,7 +10,10 @@ export default function AppLink({ href, children, ...props }: AppLinkProps) {
   const isExternal =
     href.startsWith("http://") ||
     href.startsWith("https://") ||
-    href.startsWith("mailto:");
+    href.startsWith("mailto:") ||
+    // In-page anchors: plain <a> so the browser scrolls to the section.
+    href.startsWith("#") ||
+    href.startsWith("/#");
 
   if (isExternal) {
     return (

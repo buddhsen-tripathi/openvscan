@@ -1,0 +1,109 @@
+---
+title: Results on GitHub
+description: The check run, inline review comments and summary comment OpenVScan publishes, and the rule that decides pass, fail or neutral.
+---
+
+When a review finishes, OpenVScan publishes its results to the pull request in three places: a check run on the head commit, an inline review on the changed lines, and one summary comment. All three are written by the GitHub App, not by a user account.
+
+## Pass, fail or neutral
+
+The conclusion follows one rule.
+
+If the repository's **Fail the check on** setting is **Never**, the conclusion is always **neutral**. Findings are advisory.
+
+Otherwise the review **fails** when at least one finding meets all three conditions:
+
+- its severity is at or above the fail threshold,
+- it is in the diff, meaning on a line the pull request added or modified (see [Scanners](/docs/scanners#in-the-diff)),
+- the AI review did not mark it `false_positive`.
+
+If no finding meets all three, the review **passes**.
+
+Findings the agent marked `confirmed` or `needs_review`, and findings it was never asked about, all count. In a branch review there is no diff, so the second condition does not apply.
+
+With the default threshold of **High**:
+
+| Finding | Result |
+|---------|--------|
+| High severity, on a changed line | Fail |
+| High severity, on a changed line, marked `false_positive` by the agent | Pass |
+| Critical severity, in a file the pull request did not touch | Pass, reported as pre-existing |
+| Medium severity, on a changed line | Pass, reported as a lower-severity finding |
+
+The check run conclusion on GitHub maps as follows:
+
+| OpenVScan | GitHub check conclusion |
+|-----------|-------------------------|
+| Pass | `success` |
+| Fail | `failure` |
+| Neutral | `neutral` |
+| Review cancelled | `cancelled` |
+| Review could not complete | `neutral` |
+
+A failing check does not block merging by itself. To block merges, add `OpenVScan Security Review` as a required status check in your branch protection rules on GitHub.
+
+## The check run
+
+OpenVScan creates a check run named `OpenVScan Security Review` on the head commit as soon as a review starts, with the title "Security review in progress". Its details link opens the review in the dashboard.
+
+When the review completes, the check run gets:
+
+- A title such as "1 blocking issue (severity ≥ high)", "No blocking issues · 3 lower-severity findings", "No security issues found", or "2 findings (advisory)" when the threshold is **Never**.
+- A summary with counts by severity, how many findings the agent dismissed as false positives, how many pre-existing findings sit outside the diff, the AI summary and risk rating, and a link to the dashboard.
+- A table of up to 50 findings.
+
+### Annotations
+
+Each counted finding that has a file and line becomes a line annotation, up to 200 per review, most severe first. A counted finding is one the agent did not dismiss and, in a pull request review, that is in the diff.
+
+| Annotation level | Used for |
+|------------------|----------|
+| `failure` | Findings at or above the fail threshold |
+| `warning` | Other findings of medium severity or above |
+| `notice` | Low and info findings |
+
+The annotation message includes the finding's description, the agent's reasoning if it gave a verdict, and the fix if one is known.
+
+## Inline review comments
+
+OpenVScan posts one pull request review per review run, with inline comments on the changed lines. The review is a comment review: it never approves or requests changes.
+
+A finding gets an inline comment when:
+
+- it is in the diff and the agent did not dismiss it,
+- its severity is low or above (info findings are skipped),
+- its lines fall inside a diff hunk, where GitHub allows comments,
+- an earlier completed review of the same pull request has not already reported it in the diff.
+
+Comments are ordered by severity, and a review posts at most 25. A finding that spans several lines gets a multi-line comment when the whole range is commentable. Otherwise the comment goes on the last commentable line in the range.
+
+Each comment shows the severity, the source (Trivy, Opengrep, Gitleaks or AI review), the title and description, the agent's verdict and reasoning for scanner findings, the fix, and the rule id and CWE. When the agent supplied replacement code for exactly the commented lines, the comment includes a GitHub `suggestion` block you can commit in one click.
+
+If no finding qualifies, no review is posted. If GitHub rejects the inline comments, the review is posted without them and the run log notes it. The summary comment still lands either way.
+
+Earlier findings are recognized by fingerprint, which ignores line numbers. Pushing a commit that moves code around does not repost the same comments.
+
+## The summary comment
+
+Each pull request gets one OpenVScan summary comment. Every new review edits that comment in place instead of adding another. OpenVScan remembers the comment's id, and falls back to looking for a hidden marker, `<!-- openvscan:summary -->`, on comments posted by a GitHub App. If neither is found, for example because someone deleted the comment, it posts a new one.
+
+The comment contains:
+
+- A headline with the outcome, the reviewed commit and counts by severity.
+- The AI review summary and risk rating. If the AI review did not complete, the reason. If no AI reviewer is set, a note on how to enable one.
+- A table of up to 15 counted findings, with a check mark next to the source when the agent confirmed it.
+- Notes on findings the agent dismissed, pre-existing findings outside the diff, and any scanner that failed.
+- A link to the full report in the dashboard.
+
+Branch reviews post only the check run, since there is no pull request to comment on.
+
+## Sanitization
+
+Scanner output and agent output both come from code an attacker can control. Before any of it is posted to GitHub, OpenVScan runs it through a sanitizer that:
+
+- removes HTML comment markers, so text cannot forge or hide content such as the summary marker,
+- strips HTML tags,
+- inserts a zero-width space after `@`, so text cannot mention and notify GitHub users or teams,
+- trims the text and truncates it to a fixed length for each field.
+
+Inside suggestion blocks, triple backticks are replaced so the code cannot break out of the block. In inline code spans, backticks are replaced with single quotes.
