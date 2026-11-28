@@ -166,14 +166,13 @@ function RunDetailPage() {
           <div className="min-w-0 space-y-6">
             <AiSummary run={run} />
             <Findings run={run} />
+            <Logs run={run} />
           </div>
           <aside className="space-y-6 lg:sticky lg:top-20">
             <RunFacts run={run} />
             <ScannerStats run={run} />
           </aside>
         </div>
-
-        <Logs run={run} />
       </div>
     </>
   );

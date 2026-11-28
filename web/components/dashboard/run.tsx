@@ -8,7 +8,7 @@ import {
   type Scanner,
   SEVERITIES,
 } from "@openvscan/core";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentLogo } from "@/components/brand/AgentLogo";
 import { formatDuration } from "@/components/dashboard/RunList";
 import { Notice, Panel, TabBar } from "@/components/dashboard/ui";
@@ -738,10 +738,24 @@ export function ScannerStats({ run }: { run: RunDetail }) {
   );
 }
 
+/** The run's log. Open while the review runs, and it follows new lines. */
 export function Logs({ run }: { run: RunDetail }) {
-  if (run.logs.length === 0) return null;
+  const [open, setOpen] = useState(() => isActiveRun(run.status));
+  const body = useRef<HTMLDivElement>(null);
+  // Near the bottom when a line arrives: stay there. Scrolled up: leave it.
+  const pinned = useRef(true);
+  const count = run.logs.length;
+  useEffect(() => {
+    const el = body.current;
+    if (el && open && count && pinned.current) el.scrollTop = el.scrollHeight;
+  }, [count, open]);
+  if (count === 0) return null;
   return (
-    <details className="group overflow-hidden rounded-[10px] border border-transparent bg-card shadow-edge">
+    <details
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="group overflow-hidden rounded-[10px] border border-transparent bg-card shadow-edge"
+    >
       <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 [&::-webkit-details-marker]:hidden">
         <span className="text-[14px] font-semibold text-foreground">
           Run log
@@ -754,20 +768,29 @@ export function Logs({ run }: { run: RunDetail }) {
           className="text-muted-foreground transition-transform group-open:rotate-180"
         />
       </summary>
-      <div className="max-h-80 space-y-0.5 overflow-y-auto border-t border-border bg-background/60 px-5 py-4 font-mono text-[12px]">
+      <div
+        ref={body}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          pinned.current =
+            el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+        }}
+        className="max-h-[420px] space-y-0.5 overflow-y-auto border-t border-border bg-background/60 px-5 py-4 font-mono text-[12px]"
+      >
         {run.logs.map((log) => (
           <div key={log.id} className="flex gap-4">
             <span className="shrink-0 text-muted-foreground/60">
               {new Date(log.timestamp).toLocaleTimeString()}
             </span>
             <span
-              className={
+              className={cn(
+                "min-w-0 [overflow-wrap:anywhere]",
                 log.level === "error"
                   ? "text-status-failed"
                   : log.level === "warn"
                     ? "text-status-pending"
-                    : "text-foreground/85"
-              }
+                    : "text-foreground/85",
+              )}
             >
               {log.message}
             </span>
