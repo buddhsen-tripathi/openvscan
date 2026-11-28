@@ -661,6 +661,9 @@ async function startAgent(
   );
 
   const inv = agentInvocation(provider, kind, c.agentModel, keyStandIn);
+  // Codex refuses to start when CODEX_HOME is missing; only a ChatGPT login
+  // writes a file there, so create it for the key and access-token kinds too.
+  if (provider === "codex") await sb.exec(["mkdir", "-p", CODEX_HOME]);
   // From here until ai:collect the sandbox can reach ONLY the model API, and
   // the proxy (not the sandbox) holds the credential.
   await sb.setEgress(egress);
