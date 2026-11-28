@@ -308,5 +308,6 @@ pnpm run deploy           # engine, then web (`pnpm deploy` alone is a pnpm buil
   (`check_run_id`, `review_id`, `summary_comment_id`).
 - Do not include Semgrep registry rules; their license forbids this use.
 - The bundled opengrep-rules are LGPL-2.1 with the Commons Clause.
-- AI review uses the **repo owner's** credential. Fork PRs therefore spend the
-  owner's quota.
+- AI review uses the **repo owner's** credential. So it starts on its own
+  only for PR authors with write access; anyone else's PR (forks, bots) gets
+  scanners only until a writer comments `@<app> review`.
