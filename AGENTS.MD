@@ -194,6 +194,11 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
     `ai_verdict` and `ai_reasoning`.
   - `run_log`
 - `integer({ mode: "timestamp" })` stores epoch **seconds**.
+- Read every generated migration. For a changed default or constraint,
+  drizzle-kit rebuilds the table (`DROP TABLE` + rename). D1 ignores
+  `PRAGMA foreign_keys=OFF`, so dropping `repository` would cascade-delete
+  pull requests and runs. Write a data-only custom migration
+  (`drizzle-kit generate --custom`) and keep the default in code instead.
 - D1 allows 100 bound params per statement, so multi-row inserts and large
   `IN` lists are chunked (`chunk()` from `@openvscan/db`; `batchAll()` in
   `engine/src/db.ts` runs statements in batches of 50).
