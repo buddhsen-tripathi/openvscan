@@ -16,6 +16,7 @@ import {
   SCANNER_INFO,
   SCANNERS,
   type Scanner,
+  SKILL_LIMITS,
 } from "@openvscan/core";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
@@ -28,6 +29,7 @@ import {
   timeAgo,
 } from "@/components/dashboard/RunList";
 import {
+  CheckCard,
   EmptyState,
   GithubAvatar,
   Loading,
@@ -895,8 +897,9 @@ function SkillPicker({
         </Link>
       </div>
       <p className="mt-0.5 text-[13px] text-muted-foreground">
-        Instructions the reviewer reads and applies. If they add up to more than
-        120 KB, the ones picked first are kept.
+        Instructions the reviewer reads and applies. If they add up to more than{" "}
+        {SKILL_LIMITS.runBudget / 1024 / 1024} MB, the ones picked first are
+        kept.
       </p>
       {!data ? (
         <Spinner className="mt-3 size-4 animate-spin text-muted-foreground" />
@@ -915,58 +918,6 @@ function SkillPicker({
         </div>
       )}
     </div>
-  );
-}
-
-/** A checkbox rendered as a selectable card. */
-function CheckCard({
-  checked,
-  onChange,
-  title,
-  description,
-  compact,
-}: {
-  checked: boolean;
-  onChange: () => void;
-  title: string;
-  description: string;
-  compact?: boolean;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex cursor-pointer items-start gap-3 rounded-[8px] border bg-card transition-colors has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-accent-brand/25",
-        compact ? "px-3 py-2.5" : "px-4 py-3.5 shadow-edge",
-        checked
-          ? "border-foreground/30"
-          : "border-border hover:border-input hover:bg-accent/40",
-      )}
-    >
-      <input
-        type="checkbox"
-        className="sr-only"
-        checked={checked}
-        onChange={onChange}
-      />
-      <span
-        className={cn(
-          "mt-0.5 grid size-4 shrink-0 place-items-center rounded-[4px] border",
-          checked
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-input bg-card",
-        )}
-      >
-        {checked && <Check size={11} strokeWidth={3} />}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[13.5px] font-medium text-foreground">
-          {title}
-        </span>
-        <span className="block text-[12.5px] text-muted-foreground">
-          {description}
-        </span>
-      </span>
-    </label>
   );
 }
 

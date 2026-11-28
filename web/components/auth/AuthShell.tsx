@@ -4,7 +4,8 @@ import { BrushPanel } from "@/components/brand/BrushPanel";
 import { Wordmark } from "@/components/brand/Mark";
 import { Notice } from "@/components/dashboard/ui";
 import { Github } from "@/components/icons";
-import { InlineComment, TriageCard } from "@/components/landing/mocks";
+import { GitHubReviewComment } from "@/components/landing/github";
+import { HeroFindings } from "@/components/landing/product";
 import { REPO_URL } from "@/components/site";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/Input";
@@ -85,9 +86,9 @@ export function AuthShell({
           className="flex h-full flex-col justify-center rounded-[12px] px-10 py-16"
         >
           <div className="mx-auto grid w-full max-w-[540px] gap-4">
-            <TriageCard rows={3} className="max-w-none" />
+            <HeroFindings limit={3} />
             <div className="ml-10">
-              <InlineComment compact />
+              <GitHubReviewComment compact />
             </div>
           </div>
         </BrushPanel>

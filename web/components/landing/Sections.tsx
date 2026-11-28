@@ -4,29 +4,7 @@ import { ContourPanel } from "@/components/brand/ContourPanel";
 import { Book, Plus } from "@/components/icons";
 import { REPO_URL } from "@/components/site";
 import { cn } from "@/lib/utils";
-import {
-  ApiSpecVisual,
-  CommitHistoryVisual,
-  HardeningVisual,
-  LanguageRulesVisual,
-  MaliciousPackageVisual,
-  PipelineVisual,
-  SkillImportPanel,
-  SkillListPanel,
-} from "./features";
-import {
-  AiTriageCard,
-  CheckRunCard,
-  CredentialPanel,
-  DeployPanel,
-  DiffScopePanel,
-  EgressPanel,
-  InlineComment,
-  McpPanel,
-  PolicyPanel,
-  ScannerSuiteCard,
-  SummaryCard,
-} from "./mocks";
+import { GitHubReviewComment, GitHubSummaryComment } from "./github";
 import {
   ArrowLink,
   Button,
@@ -38,6 +16,25 @@ import {
   SELF_HOST_HREF,
   SectionHeading,
 } from "./primitives";
+import {
+  ApiSpecVisual,
+  CommitHistoryVisual,
+  CredentialPanel,
+  DeployPanel,
+  DiffScopePanel,
+  EgressPanel,
+  HardeningVisual,
+  HeroFindings,
+  HeroScanners,
+  HeroVerdict,
+  LanguageRulesVisual,
+  MaliciousPackageVisual,
+  McpPanel,
+  PipelineVisual,
+  PolicyPanel,
+  SkillPickerPanel,
+  SkillsPanel,
+} from "./product";
 
 /* ---------------------------------- Hero ---------------------------------- */
 
@@ -72,13 +69,13 @@ export function Hero() {
           <ContourPanel className="rounded-[20px] px-4 py-5 sm:px-8 sm:py-12 lg:px-12 lg:pt-14 lg:pb-24">
             <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.04fr)_minmax(0,1fr)] lg:gap-6">
               <Frame>
-                <CheckRunCard />
+                <HeroVerdict />
               </Frame>
               <Frame className="lg:translate-y-12">
-                <ScannerSuiteCard />
+                <HeroFindings />
               </Frame>
               <Frame className="hidden sm:block">
-                <AiTriageCard />
+                <HeroScanners />
               </Frame>
             </div>
           </ContourPanel>
@@ -286,8 +283,8 @@ export function OnThePr() {
             className="rounded-[20px] p-4 sm:p-10"
           >
             <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-              <InlineComment />
-              <SummaryCard />
+              <GitHubReviewComment />
+              <GitHubSummaryComment />
             </div>
           </BrushPanel>
         </Reveal>
@@ -341,10 +338,10 @@ export function Skills() {
           >
             <div className="mx-auto grid max-w-[980px] grid-cols-[minmax(0,1fr)] items-start gap-4 md:grid-cols-2 lg:gap-6">
               <Frame>
-                <SkillImportPanel />
+                <SkillsPanel />
               </Frame>
               <Frame className="md:translate-y-8">
-                <SkillListPanel />
+                <SkillPickerPanel />
               </Frame>
             </div>
           </ContourPanel>
