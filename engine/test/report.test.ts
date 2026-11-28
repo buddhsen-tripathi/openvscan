@@ -122,6 +122,12 @@ describe("buildSummaryComment", () => {
   it("is positive when nothing relevant was found", () => {
     expect(buildSummaryComment([], "pass", ctx)).toContain("No security issues found");
   });
+
+  it("lists the scanners that ran, not a fixed set", () => {
+    const body = buildSummaryComment([], "pass", { ...ctx, scannersRan: ["opengrep", "osv", "spectral"], scannersSkipped: 3 });
+    expect(body).toContain("Scanners: OpenGrep · OSV-Scanner · Spectral (OWASP API) (3 skipped: no relevant files changed) · AI: Claude Code");
+    expect(body).not.toContain("Trivy");
+  });
 });
 
 describe("buildInlineComments", () => {

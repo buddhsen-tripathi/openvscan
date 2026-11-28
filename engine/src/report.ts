@@ -54,6 +54,9 @@ export interface ReportContext {
   /** Why the AI step was deliberately not run, if so. */
   aiSkipped?: string | null;
   scannerErrors: string[];
+  /** Scanners that ran, and how many were skipped (nothing they read changed). */
+  scannersRan?: string[];
+  scannersSkipped?: number;
 }
 
 const EMOJI: Record<Severity, string> = {
@@ -173,7 +176,7 @@ function aiBlock(ctx: ReportContext): string {
   if (ctx.aiError) return `> ⚠️ AI review did not complete: ${sanitize(ctx.aiError, 300)}`;
   if (ctx.aiSkipped) return `> ℹ️ ${sanitize(ctx.aiSkipped, 400)}`;
   if (!ctx.agent) {
-    return "> 💡 Enable the AI reviewer (Claude Code or Codex, with your own subscription) in the repository settings to triage scanner noise and catch logic flaws.";
+    return "> 💡 Enable the AI reviewer (Claude Code, Codex or Cursor, with your own subscription) in the repository settings to triage scanner noise and catch logic flaws.";
   }
   return "";
 }
@@ -184,6 +187,13 @@ function stats(findings: ReportFinding[], ctx: ReportContext) {
   const existing = ctx.isPr ? findings.filter((f) => !f.inDiff && !isDismissed(f)).length : 0;
   const overruled = findings.filter((f) => isOverruled(f, ctx)).length;
   return { rel, dismissed, existing, overruled, counts: countBySeverity(rel) };
+}
+
+function scannerLine(ctx: ReportContext): string {
+  const ran = (ctx.scannersRan ?? []).map((s) => SCANNER_INFO[s as keyof typeof SCANNER_INFO]?.label ?? s);
+  const skipped = ctx.scannersSkipped ?? 0;
+  const list = ran.length ? `Scanners: ${ran.join(" · ")}` : "No scanners ran";
+  return skipped ? `${list} (${skipped} skipped: no relevant files changed)` : list;
 }
 
 /** Body of the sticky PR summary comment. */
@@ -221,7 +231,7 @@ export function buildSummaryComment(
   lines.push(
     `[View full report →](${ctx.runUrl})`,
     "",
-    `<sub>Scanners: Trivy · Opengrep · Gitleaks${ctx.agent ? ` · AI: ${AGENT_INFO[ctx.agent as AgentProvider].label}` : ""}. Re-run from the Checks tab or the dashboard.</sub>`,
+    `<sub>${scannerLine(ctx)}${ctx.agent ? ` · AI: ${AGENT_INFO[ctx.agent as AgentProvider].label}` : ""}. Re-run from the Checks tab or the dashboard.</sub>`,
   );
   return lines.filter((l, i, a) => !(l === "" && a[i - 1] === "")).join("\n");
 }

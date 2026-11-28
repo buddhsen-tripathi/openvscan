@@ -916,6 +916,10 @@ async function publish(
     scannerErrors: Object.entries(stats)
       .filter(([, s]) => s.status === "failed")
       .map(([n, s]) => `${n} failed: ${s.error ?? "error"}`),
+    scannersRan: Object.entries(stats)
+      .filter(([, s]) => s.status === "ok")
+      .map(([n]) => n),
+    scannersSkipped: Object.values(stats).filter((s) => s.status === "skipped").length,
   };
   const conclusion = decideConclusion(findings, rctx);
   const gh = githubFor(env, c.installationId);
