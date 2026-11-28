@@ -152,7 +152,11 @@ function RepositoriesPage() {
           </EmptyState>
         </Panel>
       ) : !hasInstallation ? (
-        <InstallPrompt installUrl={connection?.installUrl ?? null} />
+        <InstallPrompt
+          installUrl={connection?.installUrl ?? null}
+          githubLogin={connection?.githubLogin ?? null}
+          linkConfigured={connection?.linkConfigured ?? false}
+        />
       ) : (
         <div className="space-y-6">
           <Panel
@@ -359,43 +363,95 @@ function ConnectPanel() {
   );
 }
 
-function InstallPrompt({ installUrl }: { installUrl: string | null }) {
+const LINK_HREF = `/api/github/link?redirect=${encodeURIComponent("/dashboard/repositories")}`;
+
+function InstallPrompt({
+  installUrl,
+  githubLogin,
+  linkConfigured,
+}: {
+  installUrl: string | null;
+  githubLogin: string | null;
+  linkConfigured: boolean;
+}) {
+  // Installing is checked against the user's own GitHub account, so that
+  // comes first; otherwise GitHub sends them back here with an error.
+  const linked = Boolean(githubLogin);
   return (
     <Panel>
       <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <div className="flex flex-col justify-center p-8 sm:p-10">
           <div className="eyebrow text-[10.5px] text-muted-foreground">
-            Step 1 of 3
+            Step {linked ? 2 : 1} of 4
           </div>
-          <h2 className="mt-3 font-display text-[30px] leading-[1.1] tracking-[-0.02em] text-foreground">
-            Install the GitHub App
-          </h2>
-          <p className="mt-3 max-w-[420px] text-[14.5px] leading-relaxed text-muted-foreground">
-            Choose the repositories OpenVScan may read. It asks for read access
-            to code and write access to checks and pull request comments,
-            nothing else.
-          </p>
-          <ul className="mt-5 space-y-2 text-[13.5px] text-foreground">
-            {[
-              "Contents: read",
-              "Checks and pull requests: read & write",
-              "Revoke any time from GitHub settings",
-            ].map((p) => (
-              <li key={p} className="flex items-center gap-2.5">
-                <span className="h-px w-3 bg-foreground" />
-                {p}
-              </li>
-            ))}
-          </ul>
-          {installUrl && (
-            <div className="mt-7">
-              <Button size="lg" asChild>
-                <a href={installUrl}>
-                  <Github />
-                  Install GitHub App
-                </a>
-              </Button>
-            </div>
+          {linked ? (
+            <>
+              <h2 className="mt-3 font-display text-[30px] leading-[1.1] tracking-[-0.02em] text-foreground">
+                Install the GitHub App
+              </h2>
+              <p className="mt-3 max-w-[420px] text-[14.5px] leading-relaxed text-muted-foreground">
+                Choose the repositories OpenVScan may read. It asks for read
+                access to code and write access to checks and pull request
+                comments, nothing else.
+              </p>
+              <ul className="mt-5 space-y-2 text-[13.5px] text-foreground">
+                {[
+                  "Contents: read",
+                  "Checks and pull requests: read & write",
+                  "Revoke any time from GitHub settings",
+                ].map((p) => (
+                  <li key={p} className="flex items-center gap-2.5">
+                    <span className="h-px w-3 bg-foreground" />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-5 text-[13px] text-muted-foreground">
+                Linked as{" "}
+                <span className="font-medium text-foreground">
+                  @{githubLogin}
+                </span>
+                . Install it on that account or on an organization you
+                administer.
+              </p>
+              {installUrl && (
+                <div className="mt-6">
+                  <Button size="lg" asChild>
+                    <a href={installUrl}>
+                      <Github />
+                      Install GitHub App
+                    </a>
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <h2 className="mt-3 font-display text-[30px] leading-[1.1] tracking-[-0.02em] text-foreground">
+                Link your GitHub account
+              </h2>
+              <p className="mt-3 max-w-[420px] text-[14.5px] leading-relaxed text-muted-foreground">
+                OpenVScan checks that you own the account or administer the
+                organization you install the App on, so only you can connect its
+                repositories. Linking reads your GitHub identity; it does not
+                grant access to code.
+              </p>
+              {linkConfigured ? (
+                <div className="mt-7">
+                  <Button size="lg" asChild>
+                    <a href={LINK_HREF}>
+                      <Github />
+                      Link GitHub account
+                    </a>
+                  </Button>
+                </div>
+              ) : (
+                <Notice tone="warning" className="mt-6">
+                  GitHub linking isn&apos;t configured on this deployment. Set
+                  GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.
+                </Notice>
+              )}
+            </>
           )}
         </div>
         <BrushPanel
