@@ -23,7 +23,6 @@ import {
   useBreadcrumb,
 } from "@/components/dashboard/ui";
 import {
-  Bot,
   Check,
   ChevronDown,
   ExternalLink,
@@ -448,9 +447,7 @@ function AiSummary({ run }: { run: RunDetail }) {
     <Panel
       title={
         <span className="inline-flex items-center gap-2">
-          <span className="grid size-5 place-items-center rounded-[5px] bg-primary text-primary-foreground">
-            <Bot size={12} />
-          </span>
+          <AgentLogo agent={run.agent} />
           AI review
           <span className="font-normal text-muted-foreground">
             {name}
@@ -658,7 +655,10 @@ function FindingRow({
           {finding.aiReasoning && (
             <div className="rounded-[8px] border border-accent-brand/20 bg-accent-brand-muted/60 p-3.5">
               <span className="eyebrow mb-1.5 flex items-center gap-1.5 text-[10.5px] text-accent-brand">
-                <Bot size={12} /> Agent's reasoning
+                {run.agent ? (
+                  <AgentLogo agent={run.agent} className="size-3" />
+                ) : null}{" "}
+                Agent's reasoning
               </span>
               <p className="whitespace-pre-line text-[13.5px] leading-relaxed text-foreground">
                 {finding.aiReasoning}
