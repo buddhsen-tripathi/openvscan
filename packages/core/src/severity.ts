@@ -14,6 +14,7 @@ export function meetsThreshold(s: Severity, threshold: FailThreshold): boolean {
 /** The fields that decide whether a finding gates a run. */
 export interface GateFinding {
   source: FindingSource;
+  ruleId?: string | null;
   severity: Severity;
   inDiff: boolean;
   aiVerdict: AiVerdict | null;
@@ -21,16 +22,19 @@ export interface GateFinding {
 
 /**
  * Can the AI's "false positive" verdict take this finding out of the gate?
- * Not for committed secrets: the AI reads attacker-controlled code, and a
- * comment like "test fixture" must not be enough to wave a live key through.
- * Its reasoning is still shown.
+ * Not for committed secrets or known-malicious packages: the AI reads
+ * attacker-controlled code, and a comment like "test fixture" must not be
+ * enough to wave a live key or a backdoored dependency through. Its
+ * reasoning is still shown.
  */
-export function aiMayDismiss(f: Pick<GateFinding, "source">): boolean {
-  return f.source !== "gitleaks";
+export function aiMayDismiss(f: Pick<GateFinding, "source"> & { ruleId?: string | null }): boolean {
+  if (f.source === "gitleaks") return false;
+  if (f.source === "osv" && f.ruleId?.startsWith("MAL-")) return false;
+  return true;
 }
 
 /** Dismissed by the AI, and the dismissal counts. */
-export function isDismissed(f: Pick<GateFinding, "source" | "aiVerdict">): boolean {
+export function isDismissed(f: Pick<GateFinding, "source" | "aiVerdict"> & { ruleId?: string | null }): boolean {
   return f.aiVerdict === "false_positive" && aiMayDismiss(f);
 }
 

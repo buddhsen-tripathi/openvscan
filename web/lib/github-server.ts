@@ -7,6 +7,7 @@ import {
   REVIEW_TRIGGERS,
   type ReviewFocus,
   type ReviewTrigger,
+  DEFAULT_SCANNERS,
   SCANNERS,
   type Scanner,
 } from "@openvscan/core";
@@ -144,6 +145,7 @@ export const connectRepository = createServerFn({ method: "POST" })
           fullName: match.fullName,
           defaultBranch: match.defaultBranch,
           private: match.private,
+          scanners: DEFAULT_SCANNERS,
         })
         .returning();
       return row;

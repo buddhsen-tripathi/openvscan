@@ -1,7 +1,6 @@
 import type { CredentialKind } from "@openvscan/core";
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { TRIVY_DB_HOSTS } from "./box";
-import { anthropicAllowed, openaiAllowed } from "./egress-rules";
+import { anthropicAllowed, openaiAllowed, scanAllowed } from "./egress-rules";
 
 /**
  * Egress policy for a review sandbox, passed as trusted `props` when the
@@ -36,8 +35,6 @@ export type EgressPolicy =
       placeholder?: string;
     };
 
-const TRIVY_DB = new Set(TRIVY_DB_HOSTS);
-
 const deny = (why: string) => {
   // Visible in Workers observability: what a sandbox tried and was refused.
   console.warn(`[egress] denied: ${why}`);
@@ -57,10 +54,8 @@ export class Outbound extends WorkerEntrypoint<Env, EgressPolicy> {
       case "checkout":
         return this.checkout(request, url, policy);
       case "scan":
-        if (TRIVY_DB.has(url.hostname) && (request.method === "GET" || request.method === "HEAD")) {
-          return fetch(request);
-        }
-        return deny(`${url.hostname} is not reachable while scanning`);
+        if (scanAllowed(request.method, url.hostname, url.pathname)) return fetch(request);
+        return deny(`${request.method} ${url.hostname}${url.pathname} is not reachable while scanning`);
       case "agent":
         return this.agent(request, url, policy);
       default:

@@ -37,9 +37,9 @@ export type Severity = (typeof SEVERITIES)[number];
 
 /**
  * Open-source scanners baked into the engine image. Each one is a separate,
- * independently-retried step in the review workflow.
+ * independently-retried step in the review workflow, run in this order.
  */
-export const SCANNERS = ["trivy", "opengrep", "gitleaks"] as const;
+export const SCANNERS = ["opengrep", "osv", "gitleaks", "trivy", "zizmor"] as const;
 export type Scanner = (typeof SCANNERS)[number];
 
 /** Per-scanner outcome of one run, stored on `run.scanner_stats`. */
@@ -48,25 +48,107 @@ export interface ScannerStat {
   findings: number;
   durationMs?: number;
   error?: string;
+  /** Why a scanner was skipped, e.g. the PR changed nothing it reads. */
+  reason?: string;
 }
 
-export const SCANNER_INFO: Record<
-  Scanner,
-  { label: string; description: string }
-> = {
-  trivy: {
-    label: "Trivy",
-    description: "Vulnerable dependencies, IaC misconfigurations",
-  },
+export const SCANNER_CATEGORIES = ["code", "dependencies", "secrets", "infrastructure", "ci"] as const;
+export type ScannerCategory = (typeof SCANNER_CATEGORIES)[number];
+
+export interface ScannerInfo {
+  label: string;
+  category: ScannerCategory;
+  /** One line for the settings page. */
+  description: string;
+  /** Why this tool, over the alternatives (docs and settings tooltip). */
+  why: string;
+  /**
+   * On a pull request, run only when a changed file matches one of these
+   * globs (same syntax as ignore paths). null = every pull request. Branch
+   * runs always run every enabled scanner.
+   */
+  triggers: readonly string[] | null;
+}
+
+export const SCANNER_INFO: Record<Scanner, ScannerInfo> = {
   opengrep: {
-    label: "Opengrep",
-    description: "Semgrep-compatible static analysis: injection, XSS, insecure APIs",
+    label: "OpenGrep",
+    category: "code",
+    description: "Static analysis with taint tracking: injection, XSS, SSRF, unsafe deserialization",
+    why: "The open-source fork of Semgrep's engine, with cross-function taint analysis. Runs about 850 vetted rules from five open-source packs (OpenGrep, GitLab, Trail of Bits, 0xdea), keeping vulnerability rules and dropping audit-only and low-confidence ones.",
+    triggers: null,
+  },
+  osv: {
+    label: "OSV-Scanner",
+    category: "dependencies",
+    description: "Known-vulnerable and malicious packages in lockfiles, across 11 ecosystems",
+    why: "Google's scanner for OSV.dev, which merges GitHub advisories, PyPA, RustSec, Go and others, and is the only open database of malicious packages (MAL- entries) from the OpenSSF. Only package names and versions leave the sandbox.",
+    triggers: [
+      "package-lock.json",
+      "npm-shrinkwrap.json",
+      "pnpm-lock.yaml",
+      "yarn.lock",
+      "bun.lock",
+      "deno.lock",
+      "requirements*.txt",
+      "poetry.lock",
+      "Pipfile.lock",
+      "pdm.lock",
+      "uv.lock",
+      "pylock.toml",
+      "go.mod",
+      "Cargo.lock",
+      "Gemfile.lock",
+      "gems.locked",
+      "composer.lock",
+      "pom.xml",
+      "gradle.lockfile",
+      "buildscript-gradle.lockfile",
+      "packages.lock.json",
+      "mix.lock",
+      "pubspec.lock",
+      "renv.lock",
+      "Package.resolved",
+      "conan.lock",
+    ],
   },
   gitleaks: {
     label: "Gitleaks",
-    description: "Hard-coded secrets and credentials",
+    category: "secrets",
+    description: "Hard-coded API keys, tokens and private keys",
+    why: "The most widely used open-source secret scanner, with about 200 provider-specific rules. It runs with its own default config, so a config file in the pull request can't turn rules off.",
+    triggers: null,
+  },
+  trivy: {
+    label: "Trivy",
+    category: "infrastructure",
+    description: "Misconfigured Dockerfiles, Kubernetes, Terraform, CloudFormation and Helm",
+    why: "Aqua's scanner, used here only for infrastructure-as-code checks, which run fully offline from the checks bundled in the pinned binary.",
+    triggers: [
+      "Dockerfile",
+      "*.Dockerfile",
+      "*.dockerfile",
+      "Containerfile",
+      "*.tf",
+      "*.tfvars",
+      "*.hcl",
+      "*.yaml",
+      "*.yml",
+      "*.json",
+      "*.bicep",
+    ],
+  },
+  zizmor: {
+    label: "zizmor",
+    category: "ci",
+    description: "GitHub Actions: script injection, dangerous triggers, leaked tokens, unpinned actions",
+    why: "Workflows run with the repository's secrets, and attacks like pull_request_target checkouts and ${{ }} injection are among the most exploited bugs on GitHub. zizmor runs offline with its low-noise persona.",
+    triggers: [".github/workflows/", ".github/actions/", "action.yml", "action.yaml", ".github/dependabot.yml"],
   },
 };
+
+/** Scanners a newly connected repository starts with. */
+export const DEFAULT_SCANNERS: Scanner[] = [...SCANNERS];
 
 /** Where a finding came from: one of the scanners, or the AI reviewer. */
 export const FINDING_SOURCES = [...SCANNERS, "ai"] as const;

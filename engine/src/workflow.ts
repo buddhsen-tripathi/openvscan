@@ -85,6 +85,7 @@ import {
   REPO_DIR,
   relPath,
   SCANNER_SPECS,
+  skipReason,
 } from "./scanners";
 
 interface ReviewParams {
@@ -168,10 +169,22 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
         await updateRun(getDb(env), runId, { phase: "scanning" });
         return true;
       });
+      // A scanner whose files the PR didn't touch is skipped (see SCANNER_INFO triggers).
+      const skips = await step.do("scan:plan", async () => {
+        const diff = c.isPr ? await loadDiffMap(env, runId) : null;
+        const changed = diff ? Object.keys(diff) : null;
+        const known = c.scanners.filter((n) => (SCANNERS as readonly string[]).includes(n));
+        return Object.fromEntries(known.map((name) => [name, skipReason(name, changed)]));
+      });
       const stats: Record<string, ScannerStat> = {};
       for (const name of SCANNERS) {
         if (!c.scanners.includes(name)) {
-          stats[name] = { status: "skipped", findings: 0 };
+          stats[name] = { status: "skipped", findings: 0, reason: "Turned off for this repository" };
+          continue;
+        }
+        const reason = skips[name] ?? null;
+        if (reason) {
+          stats[name] = { status: "skipped", findings: 0, reason };
           continue;
         }
         try {
@@ -463,22 +476,14 @@ async function runScanner(
   await ensureRepo(env, sb, c);
   await logRun(db, c.runId, "info", `Running ${name}`);
 
-  // Trivy may refresh its vulnerability DB; nothing else gets network.
-  await sb.setEgress(name === "trivy" ? { phase: "scan" } : { phase: "locked" });
+  await sb.setEgress(spec.egress === "scan" ? { phase: "scan" } : { phase: "locked" });
   let res: { exitCode: number; stderr: string };
   try {
     res = await sb.exec(spec.argv, { env: spec.env, timeoutSec: spec.timeoutSec });
-    if (name === "trivy" && res.exitCode !== 0) {
-      await logRun(db, c.runId, "warn", "Trivy DB refresh failed; using the DB bundled in the image");
-      res = await sb.exec([...spec.argv.slice(0, -1), "--skip-db-update", spec.argv.at(-1) as string], {
-        env: spec.env,
-        timeoutSec: spec.timeoutSec,
-      });
-    }
   } finally {
     await sb.lockEgress();
   }
-  if (res.exitCode !== 0) {
+  if (!(spec.okExitCodes ?? [0]).includes(res.exitCode)) {
     throw new Error(`${name} exited ${res.exitCode}: ${res.stderr.trim().slice(-400)}`);
   }
 

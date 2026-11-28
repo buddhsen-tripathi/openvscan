@@ -19,6 +19,11 @@ export interface NormalizedFinding {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * How the engine runs one scanner. The scanner reads attacker-controlled
+ * files, so every spec turns off the ways a pull request could configure it:
+ * repo config files, ignore files and inline suppression comments.
+ */
 export interface ScannerSpec {
   /** argv run inside the sandbox; must write JSON to `outputPath`. */
   argv: string[];
@@ -26,6 +31,13 @@ export interface ScannerSpec {
   /** Extra env for the command (CA trust etc. is added by the caller). */
   env?: Record<string, string>;
   timeoutSec: number;
+  /** Exit codes that mean the scan completed (default: 0 only). */
+  okExitCodes?: number[];
+  /**
+   * Network while it runs: "locked" (none) or "scan" (the OSV API only, see
+   * `scanAllowed` in egress-rules.ts).
+   */
+  egress: "locked" | "scan";
   /** Trusted parser for the (untrusted) JSON the scanner wrote. */
   parse(raw: string): NormalizedFinding[];
 }

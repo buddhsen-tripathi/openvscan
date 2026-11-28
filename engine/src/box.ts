@@ -48,8 +48,8 @@ export type TaskState =
 /** Written by checkout; its absence means the sandbox lost the repository. */
 export const CHECKOUT_MARKER = "/workspace/.checkout";
 
-/** Hosts Trivy fetches its vulnerability DB from (OCI artifacts, GET only). */
-export const TRIVY_DB_HOSTS = ["mirror.gcr.io", "ghcr.io", "pkg-containers.githubusercontent.com"];
+/** Hosts a scanner may reach while scanning: OSV-Scanner's API (see `scanAllowed`). */
+export const SCAN_HOSTS = ["api.osv.dev"];
 
 /** Keep the tail of long command output; use files for data. */
 export const OUTPUT_CAP = 64 * 1024;

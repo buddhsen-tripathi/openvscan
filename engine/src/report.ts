@@ -65,11 +65,9 @@ const EMOJI: Record<Severity, string> = {
 };
 
 const SOURCE_LABEL: Record<FindingSource, string> = {
-  trivy: SCANNER_INFO.trivy.label,
-  opengrep: SCANNER_INFO.opengrep.label,
-  gitleaks: SCANNER_INFO.gitleaks.label,
+  ...Object.fromEntries(Object.entries(SCANNER_INFO).map(([id, info]) => [id, info.label])),
   ai: "AI review",
-};
+} as Record<FindingSource, string>;
 
 /**
  * Neutralise text that came from scanners / the agent (both derived from
