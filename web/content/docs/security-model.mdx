@@ -22,11 +22,13 @@ The engine switches the egress policy as the review moves between steps. Each ph
 | `locked` | Between steps, and while Opengrep and Gitleaks run | Nothing |
 | `checkout` | Fetching the head commit | `git fetch` of the one repository under review: `GET /info/refs?service=git-upload-pack` and `POST /git-upload-pack` on `github.com`. Push and every other repository are refused. |
 | `scan` | The Trivy step only | `GET` and `HEAD` to Trivy's database hosts: `mirror.gcr.io`, `ghcr.io`, `pkg-containers.githubusercontent.com` |
-| `agent` | The AI review | `api.anthropic.com` for Claude Code. For Codex, `api.openai.com` with an API key, or the Codex backend on `chatgpt.com` with a ChatGPT login or access token. For Cursor, `*.cursor.sh`, except its sign-in endpoints. Nothing else. |
+| `agent` | The AI review | Claude Code: on `api.anthropic.com`, `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models` and read-only account lookups under `/api/`. Codex with an API key: on `api.openai.com`, creating responses and chat completions and listing models. Codex with a ChatGPT login or access token: the Codex backend on `chatgpt.com`. Cursor: `*.cursor.sh`, except its sign-in endpoints. Nothing else. |
 
 Refused requests get a `403` response and are logged by the engine.
 
 The phases do not overlap. While the agent runs, it cannot reach GitHub, package registries or any other host it could use to send out code or tokens. Its only reachable endpoint is the model API on the account whose credential you supplied. Anything the agent reads may be sent there as part of its normal work.
+
+On that API, the agent can only call the model. Endpoints that hold your other data are refused: stored files, batches, stored responses, skills, fine-tunes and admin APIs. So are endpoints that mint keys or tokens. A prompt-injected agent therefore cannot read your account's data and copy it into the public review. The proxy also removes any `OpenAI-Organization` or `OpenAI-Project` header the agent sets.
 
 ## Secrets
 
@@ -37,13 +39,16 @@ No secret is ever placed in the container's environment, its files or Durable Ob
 
 The agent runs with no GitHub token at all.
 
+The AI review spends the repository owner's credential, so it does not start on its own for pull requests from people without write access (outside contributors, forks, bots). The scanners still run. Someone with write access can start the AI review with an `@<app> review` comment.
+
 ## What the agent can affect
 
 Inside the sandbox, the agent can read the checked-out code and run shell commands. Its only effect on the outside world is the file it writes, `/workspace/.openvscan/review.json`. The engine treats that file as untrusted:
 
 - It validates the file against a strict schema with size limits. Anything that does not validate is discarded.
 - It applies verdicts only to finding ids it gave the agent. The agent cannot dismiss a finding it was not shown.
-- It sanitizes all text before posting it to GitHub, removing HTML and neutralizing `@` mentions. See [Results on GitHub](/docs/results-on-github#sanitization).
+- It never lets the agent turn the check green on its own. A dismissed finding that would have failed the check makes the review neutral, not passing. A Gitleaks secret stays in the gate whatever the agent says. The agent may re-rate severity, but cannot lower a finding from at or above the fail threshold to below it.
+- It sanitizes all text before posting it to GitHub: it removes HTML, neutralizes `@` mentions, and stops images, links, bare URLs and issue references from rendering. See [Results on GitHub](/docs/results-on-github#sanitization).
 - All GitHub writes (check runs, reviews, comments) are made by the engine, not the agent.
 
 Scanner output is handled the same way. It is parsed by fixed parsers in the engine and sanitized before it is posted.

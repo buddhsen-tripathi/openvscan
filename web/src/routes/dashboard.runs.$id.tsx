@@ -2,6 +2,8 @@ import {
   AGENT_INFO,
   isActiveRun,
   isBlocking,
+  isDismissed,
+  isOverruled,
   SCANNER_INFO,
   type Scanner,
   SEVERITIES,
@@ -230,7 +232,16 @@ const PHASE_ORDER = [
 
 function Verdict({ run }: { run: RunDetail }) {
   const blocking = run.findings.filter((f) => blocks(f, run));
-  const active = run.findings.filter((f) => f.aiVerdict !== "false_positive");
+  const active = run.findings.filter((f) => !isDismissed(f));
+  const overruled =
+    run.failOn === "never"
+      ? []
+      : run.findings.filter((f) =>
+          isOverruled(f, {
+            isPr: Boolean(run.pullRequest),
+            failOn: run.failOn,
+          }),
+        );
 
   let headline: string;
   let sub: string;
@@ -245,6 +256,9 @@ function Verdict({ run }: { run: RunDetail }) {
       sub = active.length
         ? `${active.length} finding${active.length === 1 ? "" : "s"} reported for context, none at or above ${run.failOn} in the diff.`
         : "The scanners and the agent found nothing to report.";
+    } else if (overruled.length > 0) {
+      headline = `Check ${overruled.length} finding${overruled.length === 1 ? "" : "s"} the AI dismissed`;
+      sub = `${overruled.length === 1 ? "It is" : "They are"} at or above ${run.failOn} in the diff and would block the merge. The agent reads code from the pull request, so its dismissal alone doesn't pass the check.`;
     } else {
       headline = "Advisory review";
       sub =
@@ -408,6 +422,15 @@ const riskTone = (risk: string) =>
     : SEVERITY_CLASS[severityKey(risk)].text;
 
 function AiSummary({ run }: { run: RunDetail }) {
+  if (run.aiSkipped) {
+    return (
+      <Panel>
+        <div className="px-5 py-4 text-[13.5px] leading-relaxed text-muted-foreground">
+          {run.aiSkipped}
+        </div>
+      </Panel>
+    );
+  }
   if (!run.agent) return null;
   const name = AGENT_INFO[run.agent].label;
   if (!run.aiSummary && !run.aiError) {
@@ -462,10 +485,8 @@ function AiSummary({ run }: { run: RunDetail }) {
 
 function Findings({ run }: { run: RunDetail }) {
   const blocking = run.findings.filter((f) => blocks(f, run));
-  const active = run.findings.filter((f) => f.aiVerdict !== "false_positive");
-  const dismissed = run.findings.filter(
-    (f) => f.aiVerdict === "false_positive",
-  );
+  const active = run.findings.filter((f) => !isDismissed(f));
+  const dismissed = run.findings.filter(isDismissed);
   const tabs = [
     { key: "active", label: "Open", items: active },
     { key: "blocking", label: "Blocking", items: blocking },
@@ -591,7 +612,7 @@ function FindingRow({
             <span
               className={cn(
                 "text-[14.5px] font-medium",
-                finding.aiVerdict === "false_positive"
+                isDismissed(finding)
                   ? "text-muted-foreground line-through decoration-1"
                   : "text-foreground",
               )}

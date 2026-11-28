@@ -59,10 +59,17 @@ Conclusion (`isBlocking` in `packages/core/src/severity.ts`, shared by the
 engine and the dashboard): **fail** when any finding meets all of:
 - severity is at or above `run.fail_on`,
 - on a PR, it is in the diff (`in_diff`); manual branch runs count everything,
-- `ai_verdict` is not `false_positive`.
+- `ai_verdict` is not `false_positive`, except that the AI can't dismiss a
+  Gitleaks secret (`aiMayDismiss`).
 
-Otherwise the conclusion is **pass**. If `fail_on = "never"` it is always
-**neutral**.
+Otherwise the conclusion is **pass**, unless a finding would have blocked but
+for an AI dismissal (`isOverruled`): then **neutral**, and the summary lists
+it. The AI also can't lower a finding's severity across `fail_on`
+(`ai:collect`). If `fail_on = "never"` it is always **neutral**.
+
+PRs from authors without write access (`outsiderNote` in the webhook: not
+OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
+`run.ai_skipped` set; a writer's `@<app> review` runs the AI.
 
 ### Sandbox egress model (`engine/src/outbound.ts`, `engine/src/sandbox.ts`)
 
@@ -74,7 +81,9 @@ Otherwise the conclusion is **pass**. If `fail_on = "never"` it is always
   - `checkout`: git-upload-pack for one repo; adds a read-only token scoped to
     that single repo.
   - `scan`: GET to the Trivy DB hosts.
-  - `agent`: `api.anthropic.com`, `api.openai.com`, or `chatgpt.com`
+  - `agent`: model calls only (`egress-rules.ts`: no files, batches,
+    stored responses or key minting) on `api.anthropic.com`,
+    `api.openai.com`, or `chatgpt.com`
     `/backend-api/codex/*` (plus the account lookup and, for access tokens,
     `auth.openai.com` whoami), or `*.cursor.sh` except `/auth` and `/oauth`
     only; swaps the
@@ -291,7 +300,9 @@ pnpm run deploy           # engine, then web (`pnpm deploy` alone is a pnpm buil
 - Do not add scanners or features that need open internet from the container
   without adding an explicit, phase-scoped rule in `Outbound`.
 - Anything posted to GitHub goes through `sanitize()` in `report.ts`, which
-  strips HTML and comments and neutralizes `@mentions`.
+  strips HTML and comments, neutralizes `@mentions`, escapes `[`/`]` (no
+  images or links: GitHub fetches image URLs, which would leak private code)
+  and breaks bare URLs and `#123` / `owner/repo#123` references.
 - Workflow steps must be idempotent: they are retried and replayed. Delete
   and re-insert by `run_id` + source. Reuse saved GitHub ids
   (`check_run_id`, `review_id`, `summary_comment_id`).

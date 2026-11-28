@@ -204,7 +204,9 @@ export interface PullRequestData {
   state: "open" | "closed";
   merged?: boolean;
   draft?: boolean;
-  user: { login: string; avatar_url?: string };
+  user: { login: string; avatar_url?: string; type?: string };
+  /** OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, FIRST_TIMER, NONE, … */
+  author_association?: string;
   head: { ref: string; sha: string; repo: { full_name: string } | null };
   base: { ref: string; sha: string };
 }

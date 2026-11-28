@@ -202,7 +202,38 @@ async function handlePullRequest(payload: PullRequestPayload) {
     headRef: pr.headRef,
     headSha: pr.headSha,
     baseSha: pr.baseSha,
+    aiSkipped: repo.agent
+      ? await outsiderNote(payload.pull_request, repo, installation)
+      : null,
   });
+}
+
+/**
+ * The AI review runs on the repository owner's own credential, so it isn't
+ * started automatically for pull requests from people who can't push here
+ * (outside contributors, forks, bots such as Dependabot, whose PR text quotes
+ * upstream release notes). The scanners still run; someone with write access
+ * can start the AI review with a comment. Returns the note to show, or null.
+ */
+async function outsiderNote(
+  pr: PullRequestData,
+  repo: { owner: string; name: string },
+  installation: { installationId: string },
+): Promise<string | null> {
+  const login = pr.user.login;
+  if (
+    pr.user.type !== "Bot" &&
+    MAYBE_WRITERS.has(pr.author_association ?? "") &&
+    (await canPush(octokitForInstallation(installation.installationId), {
+      owner: repo.owner,
+      repo: repo.name,
+      username: login,
+    }).catch(() => false))
+  ) {
+    return null;
+  }
+  const slug = getEnv("GITHUB_APP_SLUG") ?? "openvscan";
+  return `AI review not started automatically: ${login} doesn't have write access to this repository, and the review runs on the owner's credential. Someone with write access can comment \`@${slug} review\` to run it.`;
 }
 
 /**

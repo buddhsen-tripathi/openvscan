@@ -1,0 +1,1 @@
+ALTER TABLE `run` ADD `ai_skipped` text;
