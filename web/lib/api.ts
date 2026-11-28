@@ -30,6 +30,14 @@ import {
   rerun,
   saveCredential,
 } from "@/lib/server";
+import {
+  deleteSkill,
+  getSkill,
+  listSkills,
+  previewSkillUrl,
+  type SaveSkillInput,
+  saveSkill,
+} from "@/lib/skills-server";
 
 const queryKeys = {
   account: ["account"] as const,
@@ -41,6 +49,8 @@ const queryKeys = {
   connectableRepos: ["github", "connectable"] as const,
   repositories: ["repositories"] as const,
   repository: (id: string) => ["repositories", id] as const,
+  skills: ["skills"] as const,
+  skill: (id: string) => ["skills", id] as const,
 };
 
 /* ------------------------------ Overview ------------------------------ */
@@ -126,6 +136,50 @@ export function useDeleteCredentialMutation() {
     mutationFn: (id: string) => deleteCredential({ data: id }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.credentials }),
+  });
+}
+
+/* ---------------------------- Review skills --------------------------- */
+
+export function useSkillsQuery() {
+  return useQuery({
+    queryKey: queryKeys.skills,
+    queryFn: () => listSkills(),
+  });
+}
+
+export function useSkillQuery(id: string | null) {
+  return useQuery({
+    queryKey: queryKeys.skill(id ?? ""),
+    queryFn: () => getSkill({ data: id as string }),
+    enabled: Boolean(id),
+  });
+}
+
+export function usePreviewSkillUrlMutation() {
+  return useMutation({
+    mutationFn: (url: string) => previewSkillUrl({ data: url }),
+  });
+}
+
+export function useSaveSkillMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SaveSkillInput) => saveSkill({ data }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.skills }),
+  });
+}
+
+export function useDeleteSkillMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteSkill({ data: id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.skills });
+      // Deleting a skill takes it off repositories.
+      queryClient.invalidateQueries({ queryKey: queryKeys.repositories });
+    },
   });
 }
 

@@ -420,6 +420,25 @@ const riskTone = (risk: string) =>
     ? "text-status-completed"
     : SEVERITY_CLASS[severityKey(risk)].text;
 
+/** Which review skills the run gave the agent. */
+function SkillsUsed({ run }: { run: RunDetail }) {
+  if (!run.skills.length) return null;
+  return (
+    <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 border-t border-border px-5 py-2.5 text-[12.5px] text-muted-foreground">
+      <span>Skills:</span>
+      {run.skills.map((s, i) => (
+        <span
+          key={s.id}
+          className={s.missing ? "line-through" : "text-foreground"}
+        >
+          {s.name}
+          {i < run.skills.length - 1 ? "," : ""}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function AiSummary({ run }: { run: RunDetail }) {
   if (run.aiSkipped) {
     return (
@@ -440,6 +459,7 @@ function AiSummary({ run }: { run: RunDetail }) {
           <AgentLogo agent={run.agent} />
           {name} reviews the change after the scanners finish.
         </div>
+        <SkillsUsed run={run} />
       </Panel>
     );
   }
@@ -474,6 +494,7 @@ function AiSummary({ run }: { run: RunDetail }) {
         )}
         {run.aiError && <Notice tone="warning">{run.aiError}</Notice>}
       </div>
+      <SkillsUsed run={run} />
     </Panel>
   );
 }

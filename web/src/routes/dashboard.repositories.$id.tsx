@@ -60,6 +60,7 @@ import {
   useCredentialsQuery,
   useDisconnectRepositoryMutation,
   useRepositoryQuery,
+  useSkillsQuery,
   useStartManualRunMutation,
   useUpdateRepositorySettingsMutation,
 } from "@/lib/api";
@@ -288,6 +289,7 @@ function PolicySummary({ repo, onEdit }: { repo: Repo; onEdit: () => void }) {
         ? repo.focus.map((f) => REVIEW_FOCUS_INFO[f].label).join(", ")
         : "General",
     ],
+    ["Skills", repo.skills.length ? `${repo.skills.length} selected` : "None"],
     ["Fails on", FAIL_LABELS[repo.failOn]],
   ];
   return (
@@ -496,6 +498,7 @@ type Policy = Pick<
   | "agent"
   | "agentModel"
   | "focus"
+  | "skills"
   | "instructions"
   | "failOn"
   | "ignorePaths"
@@ -513,6 +516,7 @@ function formFrom(p: Policy) {
     model,
     customModel: model === CUSTOM_MODEL ? (p.agentModel ?? "") : "",
     focus: p.focus,
+    skills: p.skills,
     instructions: p.instructions ?? "",
     failOn: p.failOn,
     ignorePaths: p.ignorePaths.join("\n"),
@@ -573,6 +577,7 @@ function SettingsForm({ repo }: { repo: Repo }) {
               ? null
               : form.model,
         focus: form.focus,
+        skills: form.skills,
         instructions: form.instructions.trim() || null,
         failOn: form.failOn,
         ignorePaths: lines(form.ignorePaths),
@@ -725,6 +730,10 @@ function SettingsForm({ repo }: { repo: Repo }) {
                   ))}
                 </div>
               </div>
+              <SkillPicker
+                value={form.skills}
+                onChange={(v) => set("skills", v)}
+              />
               <div className="space-y-2 px-5 py-4">
                 <label
                   htmlFor="instructions"
@@ -855,6 +864,57 @@ function SettingsForm({ repo }: { repo: Repo }) {
         }}
       />
     </form>
+  );
+}
+
+/** Built-in and the user's own review skills, in selection order. */
+function SkillPicker({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const { data } = useSkillsQuery();
+  const all = data ? [...data.builtins, ...data.skills] : [];
+  const toggle = (id: string) =>
+    onChange(
+      value.includes(id) ? value.filter((x) => x !== id) : [...value, id],
+    );
+  return (
+    <div className="px-5 py-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div className="text-[14px] font-medium text-foreground">
+          Review skills
+        </div>
+        <Link
+          href="/dashboard/settings#skills"
+          className="text-[12.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          Manage skills
+        </Link>
+      </div>
+      <p className="mt-0.5 text-[13px] text-muted-foreground">
+        Instructions the reviewer reads and applies. If they add up to more than
+        120 KB, the ones picked first are kept.
+      </p>
+      {!data ? (
+        <Spinner className="mt-3 size-4 animate-spin text-muted-foreground" />
+      ) : (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {all.map((s) => (
+            <CheckCard
+              key={s.id}
+              compact
+              checked={value.includes(s.id)}
+              onChange={() => toggle(s.id)}
+              title={s.builtin ? s.name : `${s.name} (yours)`}
+              description={s.description || "No description"}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
