@@ -25,7 +25,7 @@ Each one tells the reviewer what to look for, what evidence a finding needs (a c
 Open **Settings → Review skills** and click **Add skill**. There are three ways in:
 
 - **Paste**: paste markdown, then click **Continue**.
-- **Upload**: pick a `.md` file (a `SKILL.md` or any markdown file) up to 256 KB.
+- **Upload**: pick a `.md` file (a `SKILL.md` or any markdown file) up to 512 KB.
 - **Import URL**: enter a link and click **Fetch and preview**. See [URL import](#url-import).
 
 All three end on the same preview: the name, description and full instructions, which you can edit before you click **Save skill**. Read the instructions before saving. The reviewer follows them as yours.
@@ -51,7 +51,7 @@ charge belongs to the same customer.
 
 - `name` and `description` from the frontmatter fill in the form. Other keys are ignored. Without frontmatter you type the name; for an uploaded or imported file it defaults to the file's folder or file name.
 - The **name** is up to 80 characters and must be unique among your skills. The **description** is up to 1,024 characters; the agent sees it in a list and uses it to decide when the skill applies, so say what kind of change it is for.
-- The **instructions** (everything after the frontmatter) can be up to 256 KB. Size costs little: the agent sees only names and descriptions, and opens a skill's file when it applies to the change.
+- The **instructions** (everything after the frontmatter) can be up to 512 KB. Size costs little: the agent sees only names and descriptions, and opens a skill's file when it applies to the change.
 - Only the single markdown file is used. A skill that relies on scripts or extra reference files next to its `SKILL.md` gets only the `SKILL.md` text.
 
 ## URL import
@@ -73,7 +73,7 @@ Rules:
 
 - `https://` only, on the hosts above. No credentials or custom ports in the URL; query strings are dropped.
 - Redirects are followed by hand, up to five, and only to the same allowlisted hosts.
-- 10 seconds per request, about 256 KB per file, and the response must be UTF-8 text. Binary files are refused.
+- 10 seconds per request, about 512 KB per file, and the response must be UTF-8 text. Binary files are refused.
 - Only public files work: the request carries no GitHub credentials.
 
 ## Security model
@@ -95,10 +95,10 @@ What OpenVScan does to keep skills honest:
 |-------|-------|
 | Skills per account | 50 |
 | Skills per repository | 20 |
-| Skill instructions | 256 KB |
-| Skill text per review | 1 MB |
+| Skill instructions | 512 KB |
+| Skill text per review | 2 MB |
 
-If the selected skills add up to more than 1 MB, the review keeps them in the order you ticked them and leaves out any that don't fit. The review's log lists the skills it loaded and any it left out, and the review page shows them under the AI review.
+If the selected skills add up to more than 2 MB, the review keeps them in the order you ticked them and leaves out any that don't fit. The review's log lists the skills it loaded and any it left out, and the review page shows them under the AI review.
 
 ## How the agent gets them
 

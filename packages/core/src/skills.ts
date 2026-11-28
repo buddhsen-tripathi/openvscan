@@ -28,17 +28,17 @@ export const SKILL_LIMITS = {
   /**
    * UTF-8 bytes of the body (frontmatter excluded). Generous: the agent
    * opens a skill's file only when its description fits the change, so size
-   * costs nothing until it's used. Real skills reach ~100 KB.
+   * costs nothing until it's used. Real skills reach ~100 KB; D1 rows hold 2 MB.
    */
-  body: 256 * 1024,
+  body: 512 * 1024,
   /** UTF-8 bytes downloaded by a URL import, frontmatter included. */
-  download: 264 * 1024,
+  download: 520 * 1024,
   /** Skills per account. */
   perUser: 50,
   /** Skills selected on one repository. */
   perRepo: 20,
   /** UTF-8 bytes of skill text handed to the agent in one run. */
-  runBudget: 1024 * 1024,
+  runBudget: 2 * 1024 * 1024,
 } as const;
 
 /** Repository and run skill lists reference built-ins as `builtin:<slug>`. */
