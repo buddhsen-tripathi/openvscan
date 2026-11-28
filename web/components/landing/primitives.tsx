@@ -24,6 +24,27 @@ export function Container({
   );
 }
 
+/** A small rounded label with a dot, above a section heading. */
+export function EyebrowPill({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full border border-rule bg-chalk/70 px-3 py-1 text-[13px] text-ink-2",
+        className,
+      )}
+    >
+      <span className="size-1.5 rounded-full bg-brand" />
+      {children}
+    </p>
+  );
+}
+
 export function Eyebrow({
   children,
   className,
@@ -34,7 +55,7 @@ export function Eyebrow({
   return <p className={cn("eyebrow text-stone", className)}>{children}</p>;
 }
 
-/** Title on the left, supporting copy on the right. */
+/** Eyebrow pill and serif title on the left, supporting copy on the right. */
 export function SectionHeading({
   eyebrow,
   title,
@@ -49,18 +70,18 @@ export function SectionHeading({
   return (
     <Reveal
       className={cn(
-        "grid gap-6 lg:grid-cols-2 lg:items-end lg:gap-16",
+        "grid gap-6 lg:grid-cols-[1.3fr_1fr] lg:items-end lg:gap-16",
         className,
       )}
     >
       <div>
-        {eyebrow && <Eyebrow className="mb-5">{eyebrow}</Eyebrow>}
-        <h2 className="max-w-[620px] font-display text-[40px] leading-[1.04] tracking-[-0.025em] text-ink sm:text-[54px]">
+        {eyebrow && <EyebrowPill className="mb-6">{eyebrow}</EyebrowPill>}
+        <h2 className="max-w-[680px] font-editorial text-[44px] leading-[1.02] text-ink sm:text-[62px]">
           {title}
         </h2>
       </div>
       {children && (
-        <div className="max-w-[560px] text-[17px] leading-[1.65] text-stone lg:pb-2">
+        <div className="max-w-[440px] text-[17px] leading-[1.6] text-stone lg:justify-self-end lg:pb-2">
           {children}
         </div>
       )}
@@ -87,7 +108,7 @@ export function Button({
     <Link
       href={href}
       className={cn(
-        "group inline-flex h-11 items-center justify-center gap-2 rounded-[4px] px-4 text-[15px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
+        "group inline-flex h-12 items-center justify-center gap-2 rounded-full px-6 text-[15px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
         variant === "primary" && "bg-ink text-paper hover:bg-ink-2",
         variant === "outline" &&
           "border border-ink bg-transparent text-ink hover:bg-ink/[0.04]",

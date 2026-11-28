@@ -1,20 +1,31 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { BrushPanel, type BrushTone } from "@/components/brand/BrushPanel";
-import { ClaudeMark, OpenAIMark, Plus } from "@/components/icons";
+import { ContourPanel } from "@/components/brand/ContourPanel";
+import { Book, Plus } from "@/components/icons";
 import { REPO_URL } from "@/components/site";
 import { cn } from "@/lib/utils";
 import {
-  CheckCard,
+  ApiSpecVisual,
+  CommitHistoryVisual,
+  HardeningVisual,
+  LanguageRulesVisual,
+  MaliciousPackageVisual,
+  PipelineVisual,
+  SkillImportPanel,
+  SkillListPanel,
+} from "./features";
+import {
+  AiTriageCard,
+  CheckRunCard,
   CredentialPanel,
   DeployPanel,
   DiffScopePanel,
   EgressPanel,
-  HeroDemo,
   InlineComment,
+  McpPanel,
   PolicyPanel,
-  ScannersCard,
+  ScannerSuiteCard,
   SummaryCard,
-  TriageCard,
 } from "./mocks";
 import {
   ArrowLink,
@@ -32,167 +43,219 @@ import {
 
 export function Hero() {
   return (
-    <section className="pt-[124px] sm:pt-[148px]">
+    <section className="pt-[120px] sm:pt-[150px]">
       <Container>
-        <div className="grid gap-8 lg:grid-cols-[1.3fr_1fr] lg:gap-14">
-          <Reveal>
-            <Eyebrow className="mb-6">Open-source PR security review</Eyebrow>
-            <h1 className="font-display text-[52px] leading-[0.98] tracking-[-0.035em] text-ink sm:text-[72px] xl:text-[84px]">
-              Security review for every pull request
-            </h1>
-          </Reveal>
-          <Reveal delay={0.08} className="lg:pt-[68px]">
-            <p className="max-w-[540px] text-[19px] leading-[1.55] text-ink-2 sm:text-[21px]">
-              Trivy, Opengrep and Gitleaks scan the change. Your own{" "}
-              <AgentName mark={ClaudeMark} className="text-[#D97757]">
-                Claude Code
-              </AgentName>{" "}
-              or{" "}
-              <AgentName mark={OpenAIMark} className="text-ink">
-                Codex
-              </AgentName>{" "}
-              triages what they find and reads the diff. The result lands on the
-              pull request as a check and review comments.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button href={INSTALL_HREF} arrow>
-                Install on GitHub
-              </Button>
-              <Button href={SELF_HOST_HREF} variant="outline">
-                Self-host it
-              </Button>
-            </div>
-          </Reveal>
-        </div>
+        <Reveal className="mx-auto flex max-w-[920px] flex-col items-center text-center">
+          <p className="text-[14px] text-stone">
+            Open source · AGPL-3.0 · for GitHub pull requests
+          </p>
+          <h1 className="mt-5 font-editorial text-[52px] leading-[0.98] text-ink sm:text-[78px] lg:text-[92px]">
+            Security review for every pull request
+          </h1>
+          <p className="mt-6 max-w-[620px] text-[17px] leading-[1.6] text-stone sm:text-[19px]">
+            Seven open-source scanners check the change. Your own Claude Code,
+            Codex or Cursor triages what they find and reads the diff. The
+            result lands on the pull request as a check and review comments.
+          </p>
+          <div className="mt-9 flex flex-wrap justify-center gap-3">
+            <Button href={INSTALL_HREF} arrow>
+              Install on GitHub
+            </Button>
+            <Button href={DOCS_HREF} variant="outline">
+              Read the docs
+              <Book size={16} />
+            </Button>
+          </div>
+        </Reveal>
 
         <Reveal delay={0.12} className="mt-14 sm:mt-20">
-          <BrushPanel
-            id="hero"
-            tone="moss"
-            className="rounded-[12px] px-3 py-3 sm:px-10 sm:py-10"
-          >
-            <HeroDemo />
-          </BrushPanel>
+          <ContourPanel className="rounded-[20px] px-4 py-5 sm:px-8 sm:py-12 lg:px-12 lg:pt-14 lg:pb-24">
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.04fr)_minmax(0,1fr)] lg:gap-6">
+              <Frame>
+                <CheckRunCard />
+              </Frame>
+              <Frame className="lg:translate-y-12">
+                <ScannerSuiteCard />
+              </Frame>
+              <Frame className="hidden sm:block">
+                <AiTriageCard />
+              </Frame>
+            </div>
+          </ContourPanel>
         </Reveal>
       </Container>
     </section>
   );
 }
 
-/** An agent's name with its logo, inline in running text. */
-function AgentName({
-  mark: AgentMark,
+/** The frosted rim around a card floating on a gradient panel. */
+function Frame({
   className,
   children,
 }: {
-  mark: typeof ClaudeMark;
   className?: string;
-  children: string;
+  children: ReactNode;
 }) {
   return (
-    <span className="whitespace-nowrap text-ink">
-      <AgentMark
-        size="0.82em"
-        className={cn(
-          "mr-[0.28em] inline-block -translate-y-[0.06em]",
-          className,
-        )}
-      />
+    <div
+      className={cn(
+        "rounded-[14px] bg-white/30 p-1.5 ring-1 ring-white/40 backdrop-blur-[2px] dark:bg-white/[0.04] dark:ring-white/10",
+        className,
+      )}
+    >
       {children}
-    </span>
+    </div>
   );
 }
 
-/* ------------------------------ How it works ------------------------------ */
+/* ------------------------ Built on open-source scanners -------------------- */
 
-const PILLARS: {
-  tone: BrushTone;
-  variant: 0 | 1 | 2;
-  card: ReactNode;
+const SCANNERS: { name: string; what: string; href: string }[] = [
+  { name: "OpenGrep", what: "code", href: "/docs/scanners#opengrep" },
+  {
+    name: "OSV-Scanner",
+    what: "dependencies",
+    href: "/docs/scanners#osv-scanner",
+  },
+  { name: "Gitleaks", what: "secrets", href: "/docs/scanners#gitleaks" },
+  { name: "Trivy", what: "infrastructure", href: "/docs/scanners#trivy" },
+  { name: "zizmor", what: "GitHub Actions", href: "/docs/scanners#zizmor" },
+  { name: "poutine", what: "CI pipelines", href: "/docs/scanners#poutine" },
+  { name: "Spectral", what: "OpenAPI", href: "/docs/scanners#spectral" },
+];
+
+export function ScannerRow() {
+  return (
+    <section className="pt-28 sm:pt-40">
+      <Container>
+        <Reveal className="mx-auto max-w-[620px] text-center">
+          <h2 className="font-editorial text-[34px] leading-[1.1] text-ink sm:text-[42px]">
+            Built on open-source scanners
+          </h2>
+          <p className="mt-4 text-[16px] leading-[1.6] text-stone">
+            Each one is pinned by version and SHA-256 checksum and baked into
+            the sandbox image. Their rules and configs come from the image, not
+            from the pull request.
+          </p>
+        </Reveal>
+        <Reveal
+          delay={0.06}
+          className="mt-14 grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-4 lg:grid-cols-7"
+        >
+          {SCANNERS.map((s) => (
+            <a
+              key={s.name}
+              href={s.href}
+              className="group flex flex-col items-center text-center focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
+            >
+              <span className="font-display text-[22px] tracking-[-0.02em] text-stone transition-colors group-hover:text-ink">
+                {s.name}
+              </span>
+              <span className="mt-1 font-mono text-[11px] tracking-[0.04em] text-pebble">
+                {s.what}
+              </span>
+            </a>
+          ))}
+        </Reveal>
+      </Container>
+    </section>
+  );
+}
+
+/* -------------------------------- What's new ------------------------------- */
+
+const FEATURES: {
   title: string;
   body: string;
-  code: string;
-  link: { label: string; href: string };
+  visual: ReactNode;
+  href: string;
+  link: string;
 }[] = [
   {
-    tone: "moss",
-    variant: 0,
-    card: <ScannersCard />,
-    title: "Three scanners",
-    body: "Dependencies and IaC with Trivy, code patterns with Opengrep, secrets with Gitleaks. Findings are mapped to the lines the PR changed.",
-    code: "trivy · opengrep · gitleaks",
-    link: { label: "Scanners", href: "/docs/scanners" },
+    title: "Rules for the languages you use",
+    body: "About 980 OpenGrep rules from five open packs, including mobsfscan for Android and iOS. Only the rules for languages in your repository load, and a pull request that changes no source file skips OpenGrep.",
+    visual: <LanguageRulesVisual />,
+    href: "/docs/scanners#opengrep",
+    link: "OpenGrep",
   },
   {
-    tone: "umber",
-    variant: 1,
-    card: <TriageCard rows={3} />,
-    title: "Your agent triages",
-    body: "Claude Code or Codex runs headless on your own subscription or API key. It confirms or dismisses each finding and adds what the rules missed.",
-    code: "claude -p · codex exec",
-    link: {
-      label: "Agents",
-      href: "/docs/ai-review",
-    },
+    title: "Every commit in the pull request",
+    body: "Gitleaks scans what each commit added, not only the final files. A key added in one commit and deleted in the next is still in the branch's history on GitHub, so it is still reported.",
+    visual: <CommitHistoryVisual />,
+    href: "/docs/scanners#gitleaks",
+    link: "Gitleaks",
   },
   {
-    tone: "pine",
-    variant: 2,
-    card: <CheckCard />,
-    title: "One check on the PR",
-    body: "A GitHub check you can require before merge, inline comments on the changed lines, and a summary that updates on every push.",
-    code: "checks · reviews · comments",
-    link: { label: "Reports", href: "/docs/results-on-github" },
+    title: "Malicious packages stay blocked",
+    body: "OSV-Scanner checks lockfiles against OSV.dev, including the OpenSSF malicious packages dataset. A match is critical, and the AI can't dismiss it. Vendored C and C++ libraries are matched by file hash.",
+    visual: <MaliciousPackageVisual />,
+    href: "/docs/scanners#osv-scanner",
+    link: "OSV-Scanner",
+  },
+  {
+    title: "CI pipelines, not only GitHub Actions",
+    body: "zizmor audits GitHub workflows. poutine covers GitLab CI, Azure Pipelines and Tekton: untrusted input in scripts, a fork's code run with the pipeline's secrets, and scripts piped from curl into a shell.",
+    visual: <PipelineVisual />,
+    href: "/docs/scanners#poutine",
+    link: "zizmor and poutine",
+  },
+  {
+    title: "OWASP API Top 10 on your spec",
+    body: "Spectral checks OpenAPI and Swagger files with the OWASP API Security ruleset, kept to its security rules: endpoints with no authentication, credentials in URLs, plain HTTP and SSRF-prone parameters.",
+    visual: <ApiSpecVisual />,
+    href: "/docs/scanners#spectral",
+    link: "Spectral",
+  },
+  {
+    title: "The pull request can't switch them off",
+    body: "Scanners read files the author wrote, so they ignore suppression comments, ignore files, .gitignore and configs in the pull request. Each runs with the config in the image.",
+    visual: <HardeningVisual />,
+    href: "/docs/scanners#hardened-against-the-pull-request",
+    link: "Hardening",
   },
 ];
 
-export function HowItWorks() {
+export function WhatsNew() {
   return (
     <section id="product" className="scroll-mt-20 pt-28 sm:pt-40">
       <Container>
-        <SectionHeading title="Scanners, your agent and one check">
-          Every push to a pull request starts a run in an isolated Cloudflare
-          container. There is nothing to add to your CI.
+        <SectionHeading
+          eyebrow="What's new"
+          title="Seven scanners that run only when they're needed"
+        >
+          On a pull request, each scanner looks at the changed files first and
+          skips if nothing it reads was touched. The run page says why. The ones
+          that run can't be turned off by the code they're scanning.
         </SectionHeading>
 
-        {/* Trigger chip with branches down to the three cards. */}
-        <Reveal className="relative mt-14 hidden lg:block">
-          <div className="flex justify-center">
-            <span className="relative z-10 inline-flex items-center gap-2 rounded-full border border-rule-strong bg-chalk px-4 py-2 font-mono text-[13px] text-ink-2">
-              <span className="size-1.5 rounded-full bg-brand" />
-              on: pull_request · opened, synchronize, reopened
-            </span>
-          </div>
-          <div className="mx-auto h-7 w-px bg-rule-strong" />
-          <div className="mx-[16.66%] h-7 border-x border-t border-rule-strong" />
-          <div className="absolute bottom-0 left-1/2 h-7 w-px -translate-x-1/2 bg-rule-strong" />
-        </Reveal>
-
-        <div className="mt-12 grid gap-10 md:grid-cols-3 md:gap-5 lg:mt-0">
-          {PILLARS.map((p, i) => (
-            <Reveal key={p.title} delay={i * 0.06}>
-              <BrushPanel
-                id={`pillar-${i}`}
-                tone={p.tone}
-                variant={p.variant}
-                className="flex aspect-[4/3.3] items-center justify-center rounded-[10px] p-6"
-              >
-                {p.card}
-              </BrushPanel>
-              <div className="px-1">
-                <h3 className="mt-6 font-display text-[30px] leading-tight tracking-[-0.02em] text-ink">
-                  {p.title}
-                </h3>
-                <p className="mt-2.5 text-[15.5px] leading-[1.6] text-stone">
-                  {p.body}
-                </p>
-                <div className="mt-5 flex items-center justify-between gap-3">
-                  <code className="font-mono text-[12.5px] text-stone">
-                    {p.code}
-                  </code>
-                  <ArrowLink href={p.link.href}>{p.link.label}</ArrowLink>
+        <div className="mt-14 grid grid-cols-[minmax(0,1fr)] gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f, i) => (
+            <Reveal key={f.title} delay={(i % 3) * 0.06}>
+              <article className="flex h-full flex-col overflow-hidden rounded-[16px] border border-rule bg-chalk">
+                {i % 3 === 1 ? (
+                  <ContourPanel
+                    variant={(i % 2 ? 1 : 2) as 1 | 2}
+                    className="grid min-h-[260px] grid-cols-[minmax(0,1fr)] items-center p-6"
+                  >
+                    {f.visual}
+                  </ContourPanel>
+                ) : (
+                  <div className="grid min-h-[260px] grid-cols-[minmax(0,1fr)] items-center bg-paper-2/70 p-6">
+                    {f.visual}
+                  </div>
+                )}
+                <div className="flex flex-1 flex-col p-6">
+                  <h3 className="font-editorial text-[27px] leading-[1.12] text-ink">
+                    {f.title}
+                  </h3>
+                  <p className="mt-2.5 text-[15px] leading-[1.6] text-stone">
+                    {f.body}
+                  </p>
+                  <div className="mt-auto pt-5">
+                    <ArrowLink href={f.href}>{f.link}</ArrowLink>
+                  </div>
                 </div>
-              </div>
+              </article>
             </Reveal>
           ))}
         </div>
@@ -207,7 +270,10 @@ export function OnThePr() {
   return (
     <section className="pt-28 sm:pt-40">
       <Container>
-        <SectionHeading title="Findings where you already review code">
+        <SectionHeading
+          eyebrow="On the pull request"
+          title="Findings where you already review code"
+        >
           Comments land on the changed lines, the check can block the merge, and
           one summary comment keeps the whole picture current.
         </SectionHeading>
@@ -217,13 +283,10 @@ export function OnThePr() {
             id="pr"
             tone="umber"
             variant={1}
-            className="rounded-[12px] p-4 sm:p-10"
+            className="rounded-[20px] p-4 sm:p-10"
           >
-            <div className="grid items-start gap-4 lg:grid-cols-[1fr_1.05fr]">
-              <div className="space-y-4">
-                <InlineComment />
-                <CheckCard className="max-w-none" />
-              </div>
+            <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+              <InlineComment />
               <SummaryCard />
             </div>
           </BrushPanel>
@@ -245,13 +308,72 @@ export function OnThePr() {
             ],
           ].map(([t, d]) => (
             <Reveal key={t}>
-              <h3 className="font-display text-[24px] tracking-[-0.015em] text-ink">
-                {t}
-              </h3>
+              <h3 className="font-editorial text-[26px] text-ink">{t}</h3>
               <p className="mt-2 text-[15.5px] leading-[1.6] text-stone">{d}</p>
             </Reveal>
           ))}
         </div>
+      </Container>
+    </section>
+  );
+}
+
+/* ------------------------------ Review skills ------------------------------ */
+
+export function Skills() {
+  return (
+    <section id="skills" className="scroll-mt-20 pt-28 sm:pt-40">
+      <Container>
+        <SectionHeading
+          eyebrow="Review skills"
+          title="Teach the reviewer how your code works"
+        >
+          Skills are markdown instructions the AI reviewer applies when a change
+          matches: your conventions, a checklist for your framework, how you
+          handle money or tenants. Start from four built-ins based on OWASP, or
+          add your own.
+        </SectionHeading>
+
+        <Reveal className="mt-12">
+          <ContourPanel
+            variant={2}
+            className="rounded-[20px] p-4 sm:p-10 lg:p-14"
+          >
+            <div className="mx-auto grid max-w-[980px] grid-cols-[minmax(0,1fr)] items-start gap-4 md:grid-cols-2 lg:gap-6">
+              <Frame>
+                <SkillImportPanel />
+              </Frame>
+              <Frame className="md:translate-y-8">
+                <SkillListPanel />
+              </Frame>
+            </div>
+          </ContourPanel>
+        </Reveal>
+
+        <div className="mt-10 grid gap-8 md:grid-cols-3">
+          {[
+            [
+              "Import a link",
+              "A skills.sh page, a GitHub file or a gist. It's fetched once, on the server, and saved as a snapshot that never changes behind your back.",
+            ],
+            [
+              "Upload or paste",
+              "Any SKILL.md or markdown file up to 512 KB, and up to 2 MB of skills on a single review. Hidden and bidirectional characters are stripped.",
+            ],
+            [
+              "Choose per repository",
+              "Each repository picks its skills and their order. Skills shape the AI review only; the scanners stay the same.",
+            ],
+          ].map(([t, d]) => (
+            <Reveal key={t}>
+              <h3 className="font-editorial text-[26px] text-ink">{t}</h3>
+              <p className="mt-2 text-[15.5px] leading-[1.6] text-stone">{d}</p>
+            </Reveal>
+          ))}
+        </div>
+        <Reveal className="mt-8">
+          <ArrowLink href="/docs/review-skills">Review skills</ArrowLink>
+        </Reveal>
       </Container>
     </section>
   );
@@ -272,28 +394,28 @@ const DETAILS: {
     panel: <DiffScopePanel />,
   },
   {
-    title: "False positives stay out of the way",
-    body: "The agent reads the code around each finding. Test fixtures, dead code and sanitized inputs are dismissed with a reason you can read.",
-    tone: "sand",
-    panel: <TriageCard />,
-  },
-  {
     title: "A threshold per repository",
-    body: "Pick which scanners run, which agent reviews, extra instructions for it, and the severity that fails the check.",
-    tone: "moss",
+    body: "Pick which scanners run, which agent reviews, its skills and extra instructions, and the severity that fails the check.",
+    tone: "sand",
     panel: <PolicyPanel />,
   },
   {
     title: "Your key never enters the sandbox",
-    body: "The agent gets a placeholder. The real credential is swapped in at the network edge, only on requests to the model API you chose.",
-    tone: "sand",
+    body: "Claude Code, Codex or Cursor gets a placeholder. The real credential is swapped in at the network edge, only on requests to the model API you chose.",
+    tone: "moss",
     panel: <CredentialPanel />,
   },
   {
     title: "The network is locked per phase",
-    body: "Checkout can reach one repository, scanners can fetch their databases, the agent can reach its model API. During publish the sandbox reaches nothing.",
-    tone: "moss",
+    body: "Checkout can reach one repository, OSV-Scanner can send package names to OSV.dev, the agent can reach its model API. The rest of the time the sandbox reaches nothing.",
+    tone: "sand",
     panel: <EgressPanel />,
+  },
+  {
+    title: "Fix findings from your coding agent",
+    body: "OpenVScan runs an MCP server. Connect Claude Code, Codex or Cursor, and ask it to read a review's findings, fix them and run the review again.",
+    tone: "pine",
+    panel: <McpPanel />,
   },
   {
     title: "Runs on your Cloudflare account",
@@ -333,7 +455,7 @@ export function Details() {
           decisions that keep the signal high and your code and keys contained.
         </SectionHeading>
 
-        <div className="mt-14 grid gap-10 lg:grid-cols-[1fr_1.15fr] lg:gap-16">
+        <div className="mt-14 grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-16">
           <div>
             {DETAILS.map((d, i) => (
               <div
@@ -350,7 +472,7 @@ export function Details() {
                 </p>
                 <h3
                   className={cn(
-                    "mt-3 font-display text-[30px] leading-tight tracking-[-0.02em] transition-colors duration-300 sm:text-[34px]",
+                    "mt-3 font-editorial text-[32px] leading-tight transition-colors duration-300 sm:text-[38px]",
                     active === i ? "text-ink" : "text-ink lg:text-pebble",
                   )}
                 >
@@ -371,7 +493,7 @@ export function Details() {
                   id={`detail-m-${i}`}
                   tone={d.tone}
                   variant={(i % 3) as 0 | 1 | 2}
-                  className="mt-6 flex items-center justify-center rounded-[10px] p-5 sm:p-8 lg:hidden"
+                  className="mt-6 flex items-center justify-center rounded-[14px] p-5 sm:p-8 lg:hidden [&>*]:min-w-0"
                 >
                   {d.panel}
                 </BrushPanel>
@@ -385,7 +507,7 @@ export function Details() {
                 id="detail"
                 tone={DETAILS[active].tone}
                 variant={(active % 3) as 0 | 1 | 2}
-                className="flex h-[480px] items-center justify-center rounded-[12px] p-10 transition-colors duration-500"
+                className="flex h-[480px] items-center justify-center rounded-[20px] p-10 transition-colors duration-500"
               >
                 <div
                   key={active}
@@ -443,8 +565,9 @@ export function WaysToRun() {
       body: "The AI review is optional. Leave it off and you still get scanner findings mapped to the diff.",
       points: [
         "Claude Code: subscription token or API key",
-        "Codex: OpenAI API key",
-        "Encrypted at rest, injected at egress",
+        "Codex: ChatGPT login, access token or API key",
+        "Cursor: Cursor API key",
+        "Encrypted at rest, swapped in at egress",
       ],
       cta: (
         <Button
@@ -460,11 +583,14 @@ export function WaysToRun() {
   return (
     <section id="self-host" className="scroll-mt-20 pt-28 sm:pt-40">
       <Container>
-        <SectionHeading title="Hosted, or on your own Cloudflare account">
+        <SectionHeading
+          eyebrow="Run it"
+          title="Hosted, or on your own Cloudflare account"
+        >
           OpenVScan is open source, like PostHog: use the hosted cloud or deploy
           the same Workers yourself.
         </SectionHeading>
-        <Reveal className="mt-12 grid overflow-hidden rounded-[10px] border border-rule bg-chalk md:grid-cols-3">
+        <Reveal className="mt-12 grid overflow-hidden rounded-[16px] border border-rule bg-chalk md:grid-cols-3">
           {cols.map((c) => (
             <div
               key={c.title}
@@ -474,7 +600,7 @@ export function WaysToRun() {
               )}
             >
               <Eyebrow>{c.eyebrow}</Eyebrow>
-              <h3 className="mt-4 font-display text-[28px] tracking-[-0.02em] text-ink">
+              <h3 className="mt-4 font-editorial text-[30px] text-ink">
                 {c.title}
               </h3>
               <p className="mt-2 text-[15px] leading-[1.6] text-stone">
@@ -513,7 +639,7 @@ const FAQ: { group: string; items: { q: string; a: string }[] }[] = [
       },
       {
         q: "Which languages does it cover?",
-        a: "Anything the scanners and the agent understand. Opengrep's rules cover the major languages, Trivy reads lockfiles for most ecosystems, and Gitleaks is language-agnostic.",
+        a: "OpenGrep has rules for about 20 languages, and only the ones in your repository load. OSV-Scanner reads lockfiles for 11 ecosystems, Trivy covers infrastructure-as-code, zizmor and poutine cover CI pipelines, Spectral checks OpenAPI specs, and Gitleaks scans any text file.",
       },
       {
         q: "What does it cost to self-host?",
@@ -526,7 +652,7 @@ const FAQ: { group: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: "Which credentials work?",
-        a: "A Claude subscription token (from `claude setup-token`) or an Anthropic API key for Claude Code, and an OpenAI API key for Codex. If you run OpenVScan as a service for other people, check your provider's terms for subscription tokens; API keys are the safe choice there.",
+        a: "Claude Code: a subscription token from `claude setup-token` or an Anthropic API key. Codex: a ChatGPT login, a Business or Enterprise access token, or an OpenAI API key. Cursor: a Cursor API key. If you run OpenVScan as a service for other people, check your provider's terms for subscription logins; API keys are the safe choice there.",
       },
       {
         q: "Can the agent leak my code?",
@@ -534,7 +660,7 @@ const FAQ: { group: string; items: { q: string; a: string }[] }[] = [
       },
       {
         q: "What about pull requests from forks?",
-        a: "They are reviewed with the repository owner's credential, so they spend the owner's quota. Text in the PR is passed to the agent as untrusted input.",
+        a: "Pull requests from people without write access, including forks and bots, get the scanners only. The AI review runs when someone with write access comments `@<app> review`, so outsiders can't spend your quota. Text from the pull request reaches the agent as untrusted input.",
       },
     ],
   },
@@ -547,7 +673,7 @@ export function Faq() {
         <div className="grid gap-12 lg:grid-cols-[1fr_1.2fr] lg:gap-16">
           <Reveal>
             <Eyebrow className="mb-5">Questions</Eyebrow>
-            <h2 className="font-display text-[44px] leading-[1.04] tracking-[-0.025em] text-ink sm:text-[54px]">
+            <h2 className="font-editorial text-[46px] leading-[1.02] text-ink sm:text-[60px]">
               Common questions
             </h2>
             <p className="mt-5 text-[16px] text-stone">
@@ -622,9 +748,9 @@ export function FinalCta() {
             id="cta"
             tone="pine"
             variant={2}
-            className="rounded-[12px] px-6 py-20 text-center sm:py-28"
+            className="rounded-[20px] px-6 py-20 text-center sm:py-28"
           >
-            <h2 className="mx-auto max-w-[760px] font-display text-[42px] leading-[1.04] tracking-[-0.03em] text-day sm:text-[64px]">
+            <h2 className="mx-auto max-w-[800px] font-editorial text-[44px] leading-[1.02] text-day sm:text-[72px]">
               Review the next pull request before it merges
             </h2>
             <p className="mx-auto mt-5 max-w-[520px] text-[17px] leading-[1.6] text-day/70">

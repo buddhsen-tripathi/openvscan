@@ -1,27 +1,23 @@
 /**
  * Product mockups for the marketing site. They all tell one story:
- * acme/storefront#482 adds an order search endpoint. Opengrep flags a SQL
- * injection the agent confirms, Gitleaks flags a test key the agent dismisses,
- * Trivy flags a lodash CVE that predates the PR, and the agent adds an IDOR it
- * found reading the diff.
+ * acme/storefront#482 adds an order search endpoint and its OpenAPI spec.
+ * OpenGrep flags a SQL injection the agent confirms and a path traversal it
+ * dismisses, Spectral flags a DELETE with no security scheme, OSV-Scanner
+ * flags a lodash advisory that predates the PR, and the agent adds an IDOR
+ * it found reading the diff. Trivy, zizmor and poutine skip: the PR touches
+ * no IaC, workflow or pipeline file.
  */
 import type { Severity } from "@openvscan/core";
-import { useReducedMotion } from "framer-motion";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { AgentLogo } from "@/components/brand/AgentLogo";
 import { Mark } from "@/components/brand/Mark";
 import {
   Bot,
   Chat,
   Check,
   CircleDot,
-  ClaudeMark,
-  Code,
   GitPullRequest,
-  Key,
   Lock,
-  OpenAIMark,
-  Refresh,
-  ShieldCheck,
   X,
 } from "@/components/icons";
 import { SeverityBadge } from "@/components/ui/badge";
@@ -36,309 +32,244 @@ const SQL_LINE = `    \`SELECT * FROM orders WHERE note LIKE '%${Q}%'\``;
 const SQL_FIX = `    'SELECT * FROM orders WHERE note LIKE ?', [\`%${Q}%\`]`;
 
 /* -------------------------------------------------------------------------- */
-/* Hero: the pull request on the left, the run on the right.                  */
+/* Hero cards                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const AGENTS = {
-  claude: {
-    tab: "Claude Code",
-    bin: "claude-code",
-    model: "claude-sonnet-5-5",
-    Mark: ClaudeMark,
-    tint: "text-[#D97757]",
-  },
-  codex: {
-    tab: "Codex",
-    bin: "codex",
-    model: "default model",
-    Mark: OpenAIMark,
-    tint: "",
-  },
-} as const;
-type AgentKey = keyof typeof AGENTS;
-
-const RUN_STEPS = [
-  {
-    name: "checkout",
-    detail: "git fetch 3f9c2e1 · 214 files",
-    time: "1.4s",
-    icon: GitPullRequest,
-  },
-  {
-    name: "trivy",
-    detail: "1 vulnerable package",
-    time: "8.2s",
-    icon: ShieldCheck,
-  },
-  { name: "opengrep", detail: "2 findings", time: "11.6s", icon: Code },
-  { name: "gitleaks", detail: "1 secret", time: "0.9s", icon: Key },
-  {
-    name: "agent",
-    detail: "triaged 4 · found 1 · reviewed diff",
-    time: "1m 14s",
-    icon: Bot,
-  },
-  {
-    name: "publish",
-    detail: "check run · 2 inline comments",
-    time: "1.1s",
-    icon: Chat,
-  },
-] as const;
-
-export function HeroDemo() {
-  const reduce = useReducedMotion();
-  const [agent, setAgent] = useState<AgentKey>("claude");
-  const [step, setStep] = useState(0);
-  const [runKey, setRunKey] = useState(0);
-  const done = step >= RUN_STEPS.length;
-
-  useEffect(() => {
-    if (reduce) {
-      setStep(RUN_STEPS.length);
-      return;
-    }
-    setStep(0);
-    let i = 0;
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    const tick = () => {
-      i += 1;
-      setStep(i);
-      if (i < RUN_STEPS.length)
-        timers.push(setTimeout(tick, i === 4 ? 1900 : 850));
-    };
-    timers.push(setTimeout(tick, 700));
-    return () => timers.forEach(clearTimeout);
-  }, [runKey, agent, reduce]);
-
-  const a = AGENTS[agent];
-
+/** The check run on the pull request. */
+export function CheckRunCard({ className }: { className?: string }) {
+  const counts: [Sev, number][] = [
+    ["critical", 0],
+    ["high", 2],
+    ["medium", 1],
+    ["low", 0],
+  ];
   return (
-    <div className="overflow-hidden rounded-[10px] bg-chalk shadow-[0_1px_2px_rgb(18_17_15/0.08),0_30px_60px_-20px_rgb(18_17_15/0.35)]">
-      {/* Window bar */}
-      <div className="flex items-center gap-3 border-b border-rule px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Mark className="h-3 w-4 text-brand" />
-          <span className="truncate font-mono text-[13px] text-ink">
-            acme/storefront <span className="text-stone">#482</span>
-          </span>
+    <Sheet className={cn("w-full overflow-hidden", className)}>
+      <div className="flex items-start justify-between gap-3 px-5 pt-4">
+        <div className="min-w-0">
+          <p className="text-[12px] text-stone">
+            <GitPullRequest size={12} className="mr-1 inline -translate-y-px" />
+            acme/storefront #482
+          </p>
+          <p className="mt-1 text-[15px] font-medium text-ink">
+            OpenVScan Security Review
+          </p>
         </div>
-        <div className="ml-2 hidden items-center gap-1 sm:flex">
-          {(Object.keys(AGENTS) as AgentKey[]).map((k) => {
-            const { Mark: AgentMark, tint } = AGENTS[k];
-            return (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setAgent(k)}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-[12.5px] transition-colors",
-                  agent === k
-                    ? "border-ink bg-ink text-paper"
-                    : "border-rule text-ink-2 hover:border-rule-strong",
-                )}
-              >
-                <AgentMark size={13} className={tint} />
-                {AGENTS[k].tab}
-              </button>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          onClick={() => setRunKey((n) => n + 1)}
-          className="ml-auto inline-flex items-center gap-1.5 text-[13px] text-stone transition-colors hover:text-ink"
-        >
-          <Refresh size={13} />
-          Replay
-        </button>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-severity-critical-muted px-2 py-0.5 text-[11.5px] font-medium text-severity-critical">
+          <X size={10} strokeWidth={3} />
+          Failed
+        </span>
       </div>
-
-      <div className="grid md:grid-cols-[1.08fr_1fr]">
-        {/* Pull request diff */}
-        <div className="min-w-0 border-b border-rule md:border-r md:border-b-0">
-          <div className="flex items-center justify-between border-b border-rule/70 bg-paper/60 px-4 py-2 font-mono text-[12px]">
-            <span className="truncate text-ink">api/orders/search.ts</span>
-            <span className="shrink-0">
-              <span className="text-brand">+14</span>{" "}
-              <span className="text-severity-critical">−3</span>
-            </span>
+      <div className="mx-5 mt-4 grid grid-cols-4 overflow-hidden rounded-[6px] border border-rule">
+        {counts.map(([s, n]) => (
+          <div
+            key={s}
+            className="border-r border-rule px-2.5 py-2 last:border-r-0"
+          >
+            <SeverityBadge severity={s} className="text-[9.5px]" />
+            <div className="mt-1 font-display text-[22px] leading-none text-ink tabular">
+              {n}
+            </div>
           </div>
-          <div className="overflow-x-auto py-2 font-mono text-[12.5px] leading-[1.75]">
-            <DiffLine n={11} text="export async function searchOrders(req) {" />
-            <DiffLine
-              n={12}
-              kind="del"
-              text="  const q = sanitize(req.query.q);"
-            />
-            <DiffLine n={12} kind="add" text="  const q = req.query.q;" />
-            <DiffLine n={13} kind="add" text="  const rows = await db.query(" />
-            <DiffLine n={14} kind="add" text={SQL_LINE} flagged={done} />
-            <div
+        ))}
+      </div>
+      <div className="mt-3 divide-y divide-rule border-t border-rule text-[12.5px]">
+        {[
+          ["SQL injection", "api/orders/search.ts", "L14"],
+          ["Order lookup skips owner check", "api/orders/[id].ts", "L22"],
+        ].map(([t, f, l]) => (
+          <div key={f} className="flex items-center gap-3 px-5 py-2.5">
+            <span className="size-[7px] shrink-0 rounded-[1.5px] bg-severity-high" />
+            <span className="min-w-0 flex-1 truncate text-ink">{t}</span>
+            <span className="hidden truncate font-mono text-[11.5px] text-stone sm:inline">
+              {f}
+            </span>
+            <span className="font-mono text-[11.5px] text-pebble">{l}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 border-t border-rule bg-paper/60 px-5 py-2.5 text-[12px] text-stone">
+        <Chat size={13} />2 inline comments · fails on high · in the diff
+      </div>
+    </Sheet>
+  );
+}
+
+const SUITE: {
+  name: string;
+  ran: boolean;
+  note: string;
+  tone: string;
+}[] = [
+  {
+    name: "OpenGrep",
+    ran: true,
+    note: "js, python rules · 2",
+    tone: "bg-[#3f8a64]",
+  },
+  {
+    name: "OSV-Scanner",
+    ran: true,
+    note: "pnpm-lock.yaml · 1",
+    tone: "bg-[#8fcaa4]",
+  },
+  { name: "Gitleaks", ran: true, note: "4 commits · 0", tone: "bg-[#d9a94e]" },
+  {
+    name: "Spectral",
+    ran: true,
+    note: "openapi.yaml · 1",
+    tone: "bg-[#2c6ea8]",
+  },
+  { name: "Trivy", ran: false, note: "no IaC changed", tone: "" },
+  { name: "zizmor", ran: false, note: "no workflow changed", tone: "" },
+  { name: "poutine", ran: false, note: "no pipeline changed", tone: "" },
+];
+
+/** The scanner step of the run: which ran, which skipped and why. */
+export function ScannerSuiteCard({ className }: { className?: string }) {
+  return (
+    <Sheet className={cn("w-full p-5", className)}>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <Eyebrow>Scanners · 3f9c2e1</Eyebrow>
+        <span className="font-mono text-[11px] text-pebble">
+          4 ran · 3 skipped
+        </span>
+      </div>
+      <p className="mt-2 text-[15px] font-medium text-ink">
+        Only what the change touches
+      </p>
+      {/* Segmented bar: one segment per scanner that ran. */}
+      <div className="mt-4 flex h-2 gap-1">
+        {SUITE.map((s) => (
+          <span
+            key={s.name}
+            className={cn(
+              "h-full flex-1 rounded-full",
+              s.ran ? s.tone : "bg-rule",
+            )}
+          />
+        ))}
+      </div>
+      <ul className="mt-4 space-y-1.5">
+        {SUITE.map((s) => (
+          <li
+            key={s.name}
+            className={cn(
+              "flex items-center gap-2.5 rounded-[6px] px-2.5 py-1.5",
+              s.ran ? "bg-paper/70" : "",
+            )}
+          >
+            <span
               className={cn(
-                "grid transition-[grid-template-rows,opacity] duration-500",
-                done
-                  ? "grid-rows-[1fr] opacity-100"
-                  : "grid-rows-[0fr] opacity-0",
+                "grid size-4 shrink-0 place-items-center rounded-full",
+                s.ran ? "bg-brand/15 text-brand" : "border border-rule-strong",
               )}
             >
-              <div className="overflow-hidden">
-                <InlineComment compact agent={a.tab} />
-              </div>
-            </div>
-            <DiffLine n={15} kind="add" text="  );" />
-            <DiffLine
-              n={16}
-              kind="add"
-              text="  return rows.filter((o) => o.id);"
-            />
-            <DiffLine n={17} text="}" />
-          </div>
-        </div>
-
-        {/* Run */}
-        <div className="flex min-w-0 flex-col bg-night text-day">
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
-            <span className="eyebrow text-pebble">Run</span>
-            <span className="flex items-center gap-2 font-mono text-[12px] text-pebble">
-              {done ? (
-                <>
-                  <span className="size-1.5 rounded-full bg-severity-critical" />
-                  Check failed
-                </>
-              ) : (
-                <>
-                  <span className="size-1.5 animate-pulse rounded-full bg-brand-light" />
-                  Running
-                </>
-              )}
-              <span className="text-white/25">·</span>
-              {done ? "1m 38s" : `${step}/${RUN_STEPS.length}`}
+              {s.ran && <Check size={9} strokeWidth={3.5} />}
             </span>
-          </div>
-          <div className="space-y-1 px-3 py-3">
-            {RUN_STEPS.map((s, i) => {
-              const state =
-                i < step ? "done" : i === step ? "active" : "waiting";
-              const Icon = s.name === "agent" ? a.Mark : s.icon;
-              return (
-                <div
-                  key={s.name}
-                  className={cn(
-                    "rounded-[6px] px-2.5 py-2 transition-colors",
-                    state === "active" && "bg-white/[0.05]",
-                  )}
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      className={cn(
-                        "mt-0.5 grid size-6 shrink-0 place-items-center rounded-[5px] border",
-                        state === "waiting"
-                          ? "border-white/10 text-white/30"
-                          : "border-white/20 text-day",
-                      )}
-                    >
-                      <Icon size={13} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span
-                          className={cn(
-                            "font-mono text-[13px]",
-                            state === "waiting" ? "text-white/35" : "text-day",
-                          )}
-                        >
-                          {s.name === "agent" ? a.bin : s.name}
-                          {s.name === "agent" && (
-                            <span className="ml-2 text-[11.5px] text-pebble">
-                              {a.model}
-                            </span>
-                          )}
-                        </span>
-                        <span className="shrink-0 font-mono text-[12px] text-pebble">
-                          {state === "done" ? s.time : ""}
-                        </span>
-                      </div>
-                      <div
-                        className={cn(
-                          "truncate text-[12.5px]",
-                          state === "waiting" ? "text-white/25" : "text-pebble",
-                        )}
-                      >
-                        {s.detail}
-                      </div>
-                      <div className="mt-2 h-[3px] overflow-hidden rounded-full bg-white/[0.07]">
-                        <div
-                          className={cn(
-                            "h-full origin-left rounded-full",
-                            state === "done" && "bg-brand-light/80",
-                            state === "active" &&
-                              "ov-anim bg-brand-light/80 [animation:ov-progress_0.9s_ease-out_forwards]",
-                            state === "waiting" && "scale-x-0",
-                          )}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-auto border-t border-white/10 px-5 py-3.5">
-            <div className="flex items-center justify-between font-mono text-[12px] text-pebble">
-              <span>5 findings · 1 dismissed · 2 in diff</span>
-              <span
-                className={cn(
-                  "transition-opacity",
-                  done ? "opacity-100" : "opacity-0",
-                )}
-              >
-                fail_on: high
-              </span>
-            </div>
-          </div>
+            <span
+              className={cn("text-[13px]", s.ran ? "text-ink" : "text-stone")}
+            >
+              {s.name}
+            </span>
+            <span
+              className={cn(
+                "ml-auto truncate font-mono text-[11px]",
+                s.ran ? "text-stone" : "text-pebble",
+              )}
+            >
+              {s.ran ? s.note : `skipped · ${s.note}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Sheet>
+  );
+}
+
+const AGENT_TABS = [
+  { id: "claude", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "cursor", label: "Cursor" },
+] as const;
+
+/** The AI review: verdicts with the reason, on your own agent. */
+export function AiTriageCard({ className }: { className?: string }) {
+  return (
+    <Sheet className={cn("w-full p-5", className)}>
+      <div className="flex items-center justify-between gap-3">
+        <Eyebrow>AI review</Eyebrow>
+        <div className="flex items-center gap-1">
+          {AGENT_TABS.map((a, i) => (
+            <span
+              key={a.id}
+              title={a.label}
+              className={cn(
+                "grid size-6 place-items-center rounded-full border",
+                i === 0 ? "border-ink/80 bg-chalk" : "border-rule opacity-60",
+              )}
+            >
+              <AgentLogo agent={a.id} className="size-3" />
+            </span>
+          ))}
         </div>
       </div>
+      <p className="mt-2 text-[15px] font-medium text-ink">
+        Your agent reads the code around each finding
+      </p>
+      <div className="mt-3 space-y-2.5">
+        <TriageNote
+          verdict="confirmed"
+          title="SQL injection in order search"
+          why="req.query.q reaches db.query; the sanitizer was removed in this PR."
+        />
+        <TriageNote
+          verdict="false positive"
+          title="Path traversal in receipt download"
+          why="The file name comes from a fixed allowlist on line 31."
+        />
+        <TriageNote
+          verdict="found by agent"
+          title="Order lookup skips owner check"
+          why="GET /orders/:id returns any order without comparing user_id."
+        />
+      </div>
+    </Sheet>
+  );
+}
+
+function TriageNote({
+  verdict,
+  title,
+  why,
+}: {
+  verdict: Verdict;
+  title: string;
+  why: string;
+}) {
+  return (
+    <div className="rounded-[6px] border border-rule bg-paper/50 px-3 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className={cn(
+            "text-[13px] leading-snug",
+            verdict === "false positive"
+              ? "text-pebble line-through decoration-pebble/60"
+              : "text-ink",
+          )}
+        >
+          {title}
+        </span>
+        <VerdictTag v={verdict} />
+      </div>
+      <p className="mt-1 text-[12px] leading-snug text-stone">{why}</p>
     </div>
   );
 }
 
-function DiffLine({
-  n,
-  text,
-  kind,
-  flagged,
-}: {
-  n: number;
-  text: string;
-  kind?: "add" | "del";
-  flagged?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex whitespace-pre pr-4 transition-colors duration-500",
-        kind === "add" && "bg-brand/[0.07]",
-        kind === "del" && "bg-severity-critical/[0.06]",
-        flagged && "bg-severity-high/[0.14]",
-      )}
-    >
-      <span className="w-10 shrink-0 select-none pr-3 text-right text-pebble">
-        {n}
-      </span>
-      <span
-        className={cn(
-          "w-4 shrink-0 select-none",
-          kind === "add" && "text-brand",
-          kind === "del" && "text-severity-critical",
-        )}
-      >
-        {kind === "add" ? "+" : kind === "del" ? "−" : " "}
-      </span>
-      <span className="text-ink-2">{text}</span>
-    </div>
-  );
-}
+/* -------------------------------------------------------------------------- */
+/* Pull request cards                                                          */
+/* -------------------------------------------------------------------------- */
 
 /** The review comment OpenVScan leaves on the offending line. */
 export function InlineComment({
@@ -374,11 +305,11 @@ export function InlineComment({
           </p>
           {!compact && (
             <div className="overflow-hidden rounded-[5px] border border-rule font-mono text-[12px] leading-[1.7]">
-              <div className="whitespace-pre bg-severity-critical/[0.06] px-2 text-ink-2">
+              <div className="overflow-x-auto whitespace-pre bg-severity-critical/[0.06] px-2 text-ink-2">
                 <span className="text-severity-critical">− </span>
                 {SQL_LINE.trim()}
               </div>
-              <div className="whitespace-pre bg-brand/[0.07] px-2 text-ink-2">
+              <div className="overflow-x-auto whitespace-pre bg-brand/[0.07] px-2 text-ink-2">
                 <span className="text-brand">+ </span>
                 {SQL_FIX.trim()}
               </div>
@@ -393,44 +324,17 @@ export function InlineComment({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Feature cards                                                              */
-/* -------------------------------------------------------------------------- */
-
-export function ScannersCard() {
-  const rows = [
-    { name: "Trivy", what: "dependencies, IaC", n: 1 },
-    { name: "Opengrep", what: "code patterns", n: 2 },
-    { name: "Gitleaks", what: "secrets", n: 1 },
-  ];
-  return (
-    <Sheet className="w-full max-w-[340px] p-4">
-      <Eyebrow>Scanners · 3f9c2e1</Eyebrow>
-      <div className="mt-3 divide-y divide-rule">
-        {rows.map((r) => (
-          <div key={r.name} className="flex items-center gap-3 py-2.5">
-            <span className="grid size-5 place-items-center rounded-full bg-brand/12 text-brand">
-              <Check size={11} strokeWidth={3} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[13.5px] text-ink">{r.name}</div>
-              <div className="text-[12px] text-stone">{r.what}</div>
-            </div>
-            <span className="font-mono text-[12px] text-stone">
-              {r.n} finding{r.n === 1 ? "" : "s"}
-            </span>
-          </div>
-        ))}
-      </div>
-    </Sheet>
-  );
-}
+type Verdict =
+  | "confirmed"
+  | "false positive"
+  | "found by agent"
+  | "outside diff";
 
 const TRIAGE_ROWS: {
   sev: Sev;
   title: string;
   file: string;
-  verdict: "confirmed" | "false positive" | "found by agent" | "outside diff";
+  verdict: Verdict;
 }[] = [
   {
     sev: "high",
@@ -446,14 +350,14 @@ const TRIAGE_ROWS: {
   },
   {
     sev: "medium",
-    title: "AWS access key in fixture",
-    file: "test/fixtures/aws.json:3",
+    title: "Path traversal in receipt download",
+    file: "api/receipts.ts:31",
     verdict: "false positive",
   },
   {
-    sev: "medium",
-    title: "lodash 4.17.20 prototype pollution",
-    file: "package-lock.json",
+    sev: "high",
+    title: "lodash 4.17.20 command injection",
+    file: "pnpm-lock.yaml",
     verdict: "outside diff",
   },
 ];
@@ -485,7 +389,7 @@ export function TriageCard({
               >
                 {r.title}
               </span>
-              <Verdict v={r.verdict} />
+              <VerdictTag v={r.verdict} />
             </div>
             <div className="mt-1 flex items-center gap-3">
               <SeverityBadge severity={r.sev} />
@@ -500,7 +404,7 @@ export function TriageCard({
   );
 }
 
-function Verdict({ v }: { v: (typeof TRIAGE_ROWS)[number]["verdict"] }) {
+function VerdictTag({ v }: { v: Verdict }) {
   const style = {
     confirmed: "bg-severity-high/12 text-severity-high",
     "found by agent": "bg-ink text-paper",
@@ -519,37 +423,6 @@ function Verdict({ v }: { v: (typeof TRIAGE_ROWS)[number]["verdict"] }) {
   );
 }
 
-export function CheckCard({ className }: { className?: string }) {
-  return (
-    <Sheet className={cn("w-full max-w-[380px] overflow-hidden", className)}>
-      <div className="flex items-center gap-2.5 border-b border-rule px-4 py-3">
-        <span className="grid size-5 place-items-center rounded-full bg-severity-critical text-white dark:text-night">
-          <X size={12} strokeWidth={3} />
-        </span>
-        <span className="text-[13.5px] font-medium text-ink">OpenVScan</span>
-        <span className="text-[12.5px] text-stone">1 blocking finding</span>
-      </div>
-      <div className="divide-y divide-rule text-[12.5px]">
-        {[
-          ["api/orders/search.ts", "L14", "high"],
-          ["api/orders/[id].ts", "L22", "high"],
-        ].map(([f, l, s]) => (
-          <div key={f} className="flex items-center gap-3 px-4 py-2.5">
-            <SeverityBadge severity={s} />
-            <span className="min-w-0 flex-1 truncate font-mono text-ink-2">
-              {f}
-            </span>
-            <span className="font-mono text-stone">{l}</span>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2 border-t border-rule bg-paper/60 px-4 py-2.5 text-[12px] text-stone">
-        <Chat size={13} />2 inline comments · summary updated
-      </div>
-    </Sheet>
-  );
-}
-
 /** Summary comment, as posted on the pull request. */
 export function SummaryCard({ className }: { className?: string }) {
   return (
@@ -564,7 +437,8 @@ export function SummaryCard({ className }: { className?: string }) {
         <p className="text-[14px] leading-relaxed text-ink-2">
           This PR adds an order search endpoint. It removes input sanitization
           and builds SQL from the query string, and a new lookup route returns
-          any order by id without checking who owns it.
+          any order by id without checking who owns it. The OpenAPI spec adds a
+          DELETE route with no security scheme.
         </p>
         <div className="grid grid-cols-4 overflow-hidden rounded-[6px] border border-rule">
           {(
@@ -596,7 +470,7 @@ export function SummaryCard({ className }: { className?: string }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Panels for the numbered feature list                                       */
+/* Panels for the numbered details                                             */
 /* -------------------------------------------------------------------------- */
 
 export function DiffScopePanel() {
@@ -693,7 +567,7 @@ export function CredentialPanel() {
     <div className="w-full max-w-[480px] space-y-3">
       <Sheet className="p-4">
         <Eyebrow>Inside the sandbox</Eyebrow>
-        <pre className="mt-2 font-mono text-[12.5px] leading-[1.7] text-ink-2">
+        <pre className="mt-2 overflow-x-auto font-mono text-[12.5px] leading-[1.7] text-ink-2">
           {"CLAUDE_CODE_OAUTH_TOKEN="}
           <span className="text-stone">placeholder</span>
         </pre>
@@ -721,8 +595,8 @@ export function CredentialPanel() {
 export function EgressPanel() {
   const phases = [
     ["checkout", "github.com · this repo only", "read-only token"],
-    ["scan", "Trivy DB mirrors", "GET only"],
-    ["agent", "api.anthropic.com", "key swapped in"],
+    ["scan", "api.osv.dev · package names", "OSV-Scanner only"],
+    ["agent", "your model API", "key swapped in"],
     ["publish", "nothing", "sandbox locked"],
   ];
   return (
@@ -734,15 +608,56 @@ export function EgressPanel() {
         {phases.map(([p, host, note]) => (
           <div
             key={p}
-            className="grid grid-cols-[84px_1fr_auto] items-center gap-3 px-5 py-2.5"
+            className="grid grid-cols-[76px_1fr] items-center gap-3 px-5 py-2.5 sm:grid-cols-[76px_1fr_auto]"
           >
             <span className="font-mono text-[12.5px] text-ink">{p}</span>
             <span className="truncate text-[13px] text-ink-2">{host}</span>
-            <span className="font-mono text-[11px] text-pebble">{note}</span>
+            <span className="hidden font-mono text-[11px] text-pebble sm:inline">
+              {note}
+            </span>
           </div>
         ))}
       </div>
     </Sheet>
+  );
+}
+
+/** Your coding agent, talking to OpenVScan over MCP. */
+export function McpPanel() {
+  return (
+    <div className="w-full max-w-[500px] overflow-hidden rounded-[8px] bg-night text-day shadow-[0_18px_40px_-12px_rgb(0_0_0/0.5)]">
+      <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+        <AgentLogo agent="claude" className="size-3.5" />
+        <span className="font-mono text-[12px] text-pebble">
+          claude · ~/storefront
+        </span>
+      </div>
+      <div className="space-y-2.5 px-5 py-4 font-mono text-[12.5px] leading-[1.6]">
+        <p>
+          <span className="text-pebble">&gt; </span>fix the OpenVScan findings
+          on this PR
+        </p>
+        <McpCall name="get_review" detail="acme/storefront #482 · 2 blocking" />
+        <p className="text-pebble">
+          Parameterized the search query and added an owner check to the lookup
+          route.
+        </p>
+        <McpCall name="rerun_review" detail="started · run 9f2c" />
+        <p>
+          <span className="text-brand-light">✓</span> Check passed
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function McpCall({ name, detail }: { name: string; detail: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 rounded-[5px] border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11.5px]">
+      <span className="text-brand-light">openvscan</span>
+      <span className="text-day">{name}</span>
+      <span className="ml-auto truncate text-pebble">{detail}</span>
+    </div>
   );
 }
 
@@ -755,8 +670,8 @@ export function DeployPanel() {
         <span className="size-2.5 rounded-full bg-white/15" />
       </div>
       <pre className="overflow-x-auto px-5 py-4 font-mono text-[12.5px] leading-[1.8]">
-        <span className="text-pebble">$ </span>pnpm db:migrate:remote{"\n"}
-        <span className="text-pebble">$ </span>pnpm deploy{"\n"}
+        <span className="text-pebble">$ </span>pnpm db:migrate{"\n"}
+        <span className="text-pebble">$ </span>pnpm run deploy{"\n"}
         <span className="text-pebble"> openvscan-engine </span>
         <span className="text-brand-light">deployed</span>
         {"\n"}
