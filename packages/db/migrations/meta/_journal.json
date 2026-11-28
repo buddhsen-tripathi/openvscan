@@ -64,6 +64,13 @@
       "when": 1795894850862,
       "tag": "0008_review_skills",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1795895640298,
+      "tag": "0009_scanner_suite",
+      "breakpoints": true
     }
   ]
 }
