@@ -1,0 +1,728 @@
+[
+ {
+  "code": "owasp:api9:2023-inventory-access",
+  "path": [
+   "servers",
+   "0"
+  ],
+  "message": "Declare intended audience of every server by defining servers[0].x-internal as true/false.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 3,
+    "character": 4
+   },
+   "end": {
+    "line": 3,
+    "character": 31
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api8:2023-no-server-http",
+  "path": [
+   "servers",
+   "0",
+   "url"
+  ],
+  "message": "Server URLs must not use http://. Use https:// or wss:// instead.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 3,
+    "character": 9
+   },
+   "end": {
+    "line": 3,
+    "character": 31
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api2:2023-read-restricted",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get"
+  ],
+  "message": "This read operation is not protected by any security scheme.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 6,
+    "character": 8
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-string-limit",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "parameters",
+   "0",
+   "schema"
+  ],
+  "message": "Schema of type string must specify maxLength, enum, or const.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 8,
+    "character": 55
+   },
+   "end": {
+    "line": 8,
+    "character": 70
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-string-restricted",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "parameters",
+   "0",
+   "schema"
+  ],
+  "message": "Schema of type string should specify a format, pattern, enum, or const.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 8,
+    "character": 55
+   },
+   "end": {
+    "line": 8,
+    "character": 70
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-rate-limit-responses-429",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses"
+  ],
+  "message": "Operation is missing rate limiting response in responses[429].",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 16
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-rate-limit-responses-429",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses"
+  ],
+  "message": "Operation is missing rate limiting response in responses[429].content.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 16
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-401",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses"
+  ],
+  "message": "Operation is missing responses[401].",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 16
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-401",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses"
+  ],
+  "message": "Operation is missing responses[401].content.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 16
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-500",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses"
+  ],
+  "message": "Operation is missing responses[500].",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 16
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-500",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses"
+  ],
+  "message": "Operation is missing responses[500].content.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 16
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-validation",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses"
+  ],
+  "message": "Missing error response of either 400, 422 or 4XX.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 16
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-rate-limit",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses",
+   "200"
+  ],
+  "message": "All 2XX and 4XX responses should define rate limiting headers.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 10,
+    "character": 14
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-array-limit",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses",
+   "200",
+   "content",
+   "application/json",
+   "schema"
+  ],
+  "message": "Schema of type array must specify maxItems.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 14,
+    "character": 21
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-string-limit",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses",
+   "200",
+   "content",
+   "application/json",
+   "schema",
+   "items"
+  ],
+  "message": "Schema of type string must specify maxLength, enum, or const.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 14,
+    "character": 43
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api4:2023-string-restricted",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "get",
+   "responses",
+   "200",
+   "content",
+   "application/json",
+   "schema",
+   "items"
+  ],
+  "message": "Schema of type string should specify a format, pattern, enum, or const.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 14,
+    "character": 43
+   },
+   "end": {
+    "line": 14,
+    "character": 58
+   }
+  },
+  "source": "/workspace/repo/api/openapi.yaml"
+ },
+ {
+  "code": "owasp:api9:2023-inventory-access",
+  "path": [
+   "servers",
+   "0"
+  ],
+  "message": "Declare intended audience of every server by defining servers[0].x-internal as true/false.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 3,
+    "character": 14
+   },
+   "end": {
+    "line": 3,
+    "character": 47
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api8:2023-no-server-http",
+  "path": [
+   "servers",
+   "0",
+   "url"
+  ],
+  "message": "Server URLs must not use http://. Use https:// or wss:// instead.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 3,
+    "character": 23
+   },
+   "end": {
+    "line": 3,
+    "character": 47
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api2:2023-write-restricted",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete"
+  ],
+  "message": "This write operation is not protected by any security scheme.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 6,
+    "character": 15
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api1:2023-no-numeric-ids",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "parameters",
+   "0",
+   "schema"
+  ],
+  "message": "Use random IDs that cannot be guessed. UUIDs are preferred but any other random string will do.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 7,
+    "character": 80
+   },
+   "end": {
+    "line": 7,
+    "character": 100
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api4:2023-integer-format",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "parameters",
+   "0",
+   "schema"
+  ],
+  "message": "Schema of type integer must specify format (int32 or int64).",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 7,
+    "character": 80
+   },
+   "end": {
+    "line": 7,
+    "character": 100
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api4:2023-integer-limit-legacy",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "parameters",
+   "0",
+   "schema"
+  ],
+  "message": "Schema of type integer must specify minimum and maximum.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 7,
+    "character": 80
+   },
+   "end": {
+    "line": 7,
+    "character": 100
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api4:2023-string-limit",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "parameters",
+   "1",
+   "schema"
+  ],
+  "message": "Schema of type string must specify maxLength, enum, or const.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 8,
+    "character": 68
+   },
+   "end": {
+    "line": 8,
+    "character": 87
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api4:2023-string-restricted",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "parameters",
+   "1",
+   "schema"
+  ],
+  "message": "Schema of type string should specify a format, pattern, enum, or const.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 8,
+    "character": 68
+   },
+   "end": {
+    "line": 8,
+    "character": 87
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api4:2023-rate-limit-responses-429",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses"
+  ],
+  "message": "Operation is missing rate limiting response in responses[429].",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 20
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api4:2023-rate-limit-responses-429",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses"
+  ],
+  "message": "Operation is missing rate limiting response in responses[429].content.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 20
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-401",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses"
+  ],
+  "message": "Operation is missing responses[401].",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 20
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-401",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses"
+  ],
+  "message": "Operation is missing responses[401].content.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 20
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-500",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses"
+  ],
+  "message": "Operation is missing responses[500].",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 20
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-responses-500",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses"
+  ],
+  "message": "Operation is missing responses[500].content.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 20
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api8:2023-define-error-validation",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses"
+  ],
+  "message": "Missing error response of either 400, 422 or 4XX.",
+  "severity": 1,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 20
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ },
+ {
+  "code": "owasp:api4:2023-rate-limit",
+  "path": [
+   "paths",
+   "/users/{id}",
+   "delete",
+   "responses",
+   "200"
+  ],
+  "message": "All 2XX and 4XX responses should define rate limiting headers.",
+  "severity": 0,
+  "range": {
+   "start": {
+    "line": 9,
+    "character": 29
+   },
+   "end": {
+    "line": 9,
+    "character": 51
+   }
+  },
+  "source": "/workspace/repo/api2/spec.json"
+ }
+]

@@ -76,9 +76,13 @@ Open a pull request on a connected repository, or use **Re-run** on an existing 
 
 Always deploy the engine before the web Worker. The web Worker calls the engine's `EngineApi` over a service binding, and a new web Worker can depend on engine changes from the same release.
 
-### Scanner versions and the Trivy database
+### Scanner versions and vulnerability data
 
-Tool versions are pinned in `engine/container/Dockerfile`, so they change only when a release changes the Dockerfile. The image includes a Trivy vulnerability database from build time. During each run, Trivy refreshes it through the egress proxy when it is stale, so you do not need to rebuild the image to get current vulnerability data.
+Tool versions and rule packs are pinned in `engine/container/Dockerfile`, with a SHA-256 checksum for every binary, so they change only when a release changes the Dockerfile. Vulnerability data is always current: OSV-Scanner queries OSV.dev during each run, so you do not need to rebuild the image to get new advisories.
+
+### Upgrading to the scanner suite
+
+OSV-Scanner replaces Trivy for dependencies, Trivy now checks infrastructure-as-code only, and zizmor, poutine and Spectral are new. Migration `0009_scanner_suite` turns on OSV-Scanner for every repository that had Trivy on, and zizmor, poutine and Spectral for every repository. Turn any of them off under **Scanners** in a repository's settings.
 
 ### Upgrading from the old scanner version
 
@@ -202,13 +206,21 @@ The container image bundles third-party tools under their own licenses:
 
 | Component | License |
 |-----------|---------|
-| Trivy | Apache-2.0 |
+| OpenGrep | LGPL-2.1 |
+| OSV-Scanner | Apache-2.0 |
 | Gitleaks | MIT |
-| Opengrep | LGPL-2.1 |
+| Trivy | Apache-2.0 |
+| zizmor | MIT |
+| poutine | Apache-2.0 |
+| Spectral and its OWASP ruleset | Apache-2.0 and MIT |
 | opengrep-rules | LGPL-2.1 with the Commons Clause |
+| GitLab sast-rules | MIT; `rules/lgpl` LGPL-3.0 |
+| Trail of Bits semgrep-rules | AGPL-3.0 |
+| 0xdea semgrep-rules | MIT |
+| mobsfscan rules | LGPL-3.0 |
 | Claude Code, Codex, Cursor CLI | Their vendors' terms |
 
-The Commons Clause restricts selling a product or service whose value derives substantially from the software. Review it before you sell a hosted service built on the bundled rules. To use different rules, set `OPENGREP_RULES_REPO` and `OPENGREP_RULES_COMMIT` in `engine/container/Dockerfile`.
+The Commons Clause restricts selling a product or service whose value derives substantially from the software. Review it before you sell a hosted service built on the bundled rules. To leave a pack out, remove it from the `curate.py` call in `engine/container/Dockerfile`. Each pack's license is copied next to its rules in the image, under `/opt/opengrep-rules`.
 
 Semgrep's registry rules are not included, because their license does not permit this kind of use. Do not add them to the image.
 

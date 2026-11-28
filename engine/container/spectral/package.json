@@ -1,0 +1,9 @@
+{
+  "name": "openvscan-spectral",
+  "private": true,
+  "description": "Spectral and the OWASP API Security ruleset for the sandbox image. Installed with npm ci from the lockfile.",
+  "dependencies": {
+    "@stoplight/spectral-cli": "6.17.1",
+    "@stoplight/spectral-owasp-ruleset": "2.0.1"
+  }
+}

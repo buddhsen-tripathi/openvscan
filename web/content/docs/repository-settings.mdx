@@ -12,15 +12,16 @@ Each connected repository has its own review policy. To change it, open **Reposi
 | **Review pull requests** | Every push | When pull requests are reviewed without being asked: **Every push**, **When opened** or **Only on request**. |
 | **Skip drafts** | On | Ignores draft pull requests until they are marked ready for review. |
 | **Target branches** | All | Only pull requests into these base branches are reviewed automatically. |
-| **Scanners** | Trivy, Opengrep, Gitleaks | Which scanners run. See [Scanners](/docs/scanners). |
+| **Scanners** | All five | Which scanners run. See [Scanners](/docs/scanners). |
 | **AI reviewer** | None | **None** runs scanners only. **Claude Code**, **Codex** or **Cursor** adds the AI review. See [AI review](/docs/ai-review). |
 | **Model** | Default | The agent's default, a model alias, or a custom model id. |
 | **Focus areas** | None | Extra checklists added to the reviewer's prompt. |
+| **Review skills** | None | Markdown skills the reviewer reads and applies. See [Review skills](/docs/review-skills). |
 | **Instructions** | Empty | Extra guidance added to the end of the agent's prompt. |
 | **Fail the check on** | High or above | The lowest severity that fails the check. |
 | **Ignored paths** | Empty | Globs for files whose findings are dropped. |
 
-**Model**, **Focus areas** and **Instructions** appear only when an AI reviewer is selected.
+**Model**, **Focus areas**, **Review skills** and **Instructions** appear only when an AI reviewer is selected.
 
 You must keep at least one scanner or an AI reviewer on. Saving with neither fails with "Enable at least one scanner or an AI agent".
 
@@ -51,6 +52,12 @@ Pick **Default** to let the agent CLI choose. For Claude Code you can also pick 
 ### Focus areas
 
 Each focus area adds a short checklist to the prompt: **Web app**, **API and backend**, **CI and infrastructure**, **LLM and agents** and **Secrets and crypto**. Pick the ones that describe the codebase. With none selected the agent does a general review.
+
+### Review skills
+
+Tick the skills this repository's reviews should use: OpenVScan's built-ins (OWASP ASVS checklist, API security, LLM application security, CI/CD security) and the skills you added in **Settings → Review skills**. **Manage skills** links there. Up to 20 per repository. If the selected skills add up to more than 120 KB, the ones you ticked first are kept. See [Review skills](/docs/review-skills) for how to add and write them.
+
+Focus areas are a sentence or two each; skills are full checklists. They work together.
 
 ### Instructions
 

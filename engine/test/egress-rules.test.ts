@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anthropicAllowed, openaiAllowed } from "../src/egress-rules";
+import { anthropicAllowed, openaiAllowed, scanAllowed } from "../src/egress-rules";
 
 describe("agent egress endpoints", () => {
   it("lets Claude Code call the model and nothing that holds the owner's data", () => {
@@ -31,5 +31,20 @@ describe("agent egress endpoints", () => {
     expect(openaiAllowed("GET", "/v1/batches")).toBe(false);
     expect(openaiAllowed("POST", "/v1/fine_tuning/jobs")).toBe(false);
     expect(openaiAllowed("DELETE", "/v1/vector_stores/vs_1")).toBe(false);
+  });
+});
+
+describe("scan egress", () => {
+  it("lets OSV-Scanner query advisories and nothing else", () => {
+    expect(scanAllowed("POST", "api.osv.dev", "/v1/querybatch")).toBe(true);
+    expect(scanAllowed("GET", "api.osv.dev", "/v1/vulns/GHSA-29mw-wpgm-hmr9")).toBe(true);
+    expect(scanAllowed("GET", "api.osv.dev", "/v1/vulns/MAL-2025-1234")).toBe(true);
+    expect(scanAllowed("POST", "api.osv.dev", "/v1experimental/determineversion")).toBe(true);
+    expect(scanAllowed("POST", "api.osv.dev", "/v1experimental/other")).toBe(false);
+
+    expect(scanAllowed("PUT", "api.osv.dev", "/v1/querybatch")).toBe(false);
+    expect(scanAllowed("GET", "api.osv.dev", "/v1/vulns/../../x")).toBe(false);
+    expect(scanAllowed("POST", "api.deps.dev", "/v3/query")).toBe(false);
+    expect(scanAllowed("GET", "osv.dev.attacker.example", "/v1/vulns/x")).toBe(false);
   });
 });

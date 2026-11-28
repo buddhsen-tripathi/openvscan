@@ -66,7 +66,7 @@ describe("networkFor", () => {
   it("blocks everything outside the phase's hosts", () => {
     expect(networkFor({ phase: "locked" })).toEqual({ networkBlockAll: true });
     expect(networkFor({ phase: "checkout", repo: "a/b", githubToken: "" }).domainAllowList).toBe("codeload.github.com");
-    expect(networkFor({ phase: "scan" }).domainAllowList).toContain("mirror.gcr.io");
+    expect(networkFor({ phase: "scan" }).domainAllowList).toBe("api.osv.dev");
     for (const kind of CREDENTIAL_KINDS) {
       const n = networkFor({ phase: "agent", kind, secret: "s" });
       expect(n).toEqual({ networkBlockAll: false, domainAllowList: AGENT_HOSTS[kind].join(",") });

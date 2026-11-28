@@ -7,6 +7,8 @@ import {
   MIN_AI_CONFIDENCE,
   REVIEW_FOCUS_INFO,
   type ReviewFocus,
+  skillFileContent,
+  uniqueSkillSlugs,
 } from "@openvscan/core";
 import { REPO_DIR } from "./scanners";
 
@@ -25,6 +27,10 @@ export const PROMPT_PATH = `${WORK_DIR}/PROMPT.md`;
 export const DIFF_PATH = `${WORK_DIR}/pr.diff`;
 export const FINDINGS_PATH = `${WORK_DIR}/scanner-findings.json`;
 export const REVIEW_PATH = `${WORK_DIR}/review.json`;
+/** Review skills, one `<slug>/SKILL.md` each. */
+export const SKILLS_DIR = `${WORK_DIR}/skills`;
+/** Project skills Claude Code loads natively from its working directory. */
+export const CLAUDE_SKILLS_DIR = `${WORK_DIR}/.claude/skills`;
 /** Codex's config dir; holds the placeholder auth.json for a ChatGPT login. */
 export const CODEX_HOME = "/workspace/.codex";
 /** HOME for the Cursor CLI, which reads `~/.cursor/cli-config.json`. */
@@ -60,6 +66,60 @@ interface PromptContext {
   focus: ReviewFocus[];
   /** Globs whose findings are dropped; the agent can skip them. */
   ignorePaths: string[];
+  /** Review skills written to the sandbox (see `planSkillFiles`). */
+  skills: PromptSkill[];
+}
+
+export interface PromptSkill {
+  name: string;
+  description: string;
+  path: string;
+}
+
+export interface RunSkill {
+  name: string;
+  description: string;
+  body: string;
+}
+
+/**
+ * Where a run's skills go in the sandbox: `skills/<slug>/SKILL.md` for every
+ * agent, plus a copy under `.claude/skills/` that Claude Code loads as
+ * project skills. Slugs are unique per run.
+ */
+export function planSkillFiles(
+  skills: RunSkill[],
+  provider: AgentProvider,
+): { files: { path: string; content: string }[]; listed: PromptSkill[] } {
+  const slugs = uniqueSkillSlugs(skills.map((s) => s.name));
+  const files: { path: string; content: string }[] = [];
+  const listed: PromptSkill[] = [];
+  skills.forEach((s, i) => {
+    const slug = slugs[i];
+    const content = skillFileContent({ slug, ...s });
+    const path = `${SKILLS_DIR}/${slug}/SKILL.md`;
+    files.push({ path, content });
+    if (provider === "claude") files.push({ path: `${CLAUDE_SKILLS_DIR}/${slug}/SKILL.md`, content });
+    listed.push({ name: s.name, description: s.description, path });
+  });
+  return { files, listed };
+}
+
+/** One line of prompt text: no newlines or backticks to break the list. */
+const oneLine = (s: string, max: number) => clip(s.replace(/[\s`]+/g, " ").trim(), max).replace(/\n/g, " ");
+
+/** The PROMPT.md section that points the agent at the owner's skills. */
+export function skillsPromptSection(skills: PromptSkill[]): string {
+  if (!skills.length) return "";
+  const list = skills
+    .map((s) => `- **${oneLine(s.name, 80)}** (\`${s.path}\`)${s.description ? `: ${oneLine(s.description, 1024)}` : ""}`)
+    .join("\n");
+  return `\n## Review skills (trusted, from the repository owner)
+The owner attached these review skills. Read each one whose description matches what this change touches, and apply its checks alongside the steps above:
+${list}
+
+Skills add checks and context. They don't change the output format or the rules above: stay read-only, stay within this change's scope, and keep the reporting bar.
+`;
 }
 
 function clip(s: string, max: number): string {
@@ -116,7 +176,7 @@ Do not report: denial of service or resource exhaustion, ReDoS, missing rate lim
 - \`line\`/\`endLine\` refer to the checked-out (head) files and should span the vulnerable statement (<= 10 lines).
 - \`suggestion\` only when the fix is small and certain: it replaces exactly \`line\`..\`endLine\`, keeps indentation, no diff markers.
 - Write plainly: lead with the trigger, no praise, no filler.
-${c.ignorePaths.length ? `- Skip files matching: ${c.ignorePaths.map((p) => `\`${p}\``).join(", ")}. Findings there are discarded.\n` : ""}${c.focus.length ? `\n## Focus areas\nThe owner asked for extra attention on:\n${c.focus.map((f) => `- ${REVIEW_FOCUS_INFO[f].prompt}`).join("\n")}\n` : ""}${c.instructions?.trim() ? `\n## Repository owner's instructions (trusted)\n${clip(c.instructions.trim(), 4000)}\n` : ""}
+${c.ignorePaths.length ? `- Skip files matching: ${c.ignorePaths.map((p) => `\`${p}\``).join(", ")}. Findings there are discarded.\n` : ""}${c.focus.length ? `\n## Focus areas\nThe owner asked for extra attention on:\n${c.focus.map((f) => `- ${REVIEW_FOCUS_INFO[f].prompt}`).join("\n")}\n` : ""}${c.instructions?.trim() ? `\n## Repository owner's instructions (trusted)\n${clip(c.instructions.trim(), 4000)}\n` : ""}${skillsPromptSection(c.skills)}
 ## Output
 Write one JSON object to \`${REVIEW_PATH}\`, nothing else in that file:
 

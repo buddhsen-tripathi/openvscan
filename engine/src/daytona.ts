@@ -6,7 +6,7 @@ import {
   OUTPUT_CAP,
   shellQuote,
   type TaskState,
-  TRIVY_DB_HOSTS,
+  SCAN_HOSTS,
 } from "./box";
 import type { EgressPolicy } from "./outbound";
 
@@ -91,7 +91,7 @@ export function networkFor(policy: EgressPolicy): NetworkSettings {
     case "checkout":
       return { networkBlockAll: false, domainAllowList: "codeload.github.com" };
     case "scan":
-      return { networkBlockAll: false, domainAllowList: TRIVY_DB_HOSTS.join(",") };
+      return { networkBlockAll: false, domainAllowList: SCAN_HOSTS.join(",") };
     case "agent":
       return { networkBlockAll: false, domainAllowList: AGENT_HOSTS[policy.kind].join(",") };
     default:

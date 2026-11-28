@@ -22,7 +22,7 @@ import {
   Refresh,
   Spinner,
 } from "@/components/icons";
-import { TriageCard } from "@/components/landing/mocks";
+import { HeroFindings } from "@/components/landing/product";
 import { RunGlyph, runOutcomeLabel } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/Input";
@@ -459,7 +459,7 @@ function InstallPrompt({
           tone="moss"
           className="hidden min-h-[360px] items-center justify-center p-10 lg:flex"
         >
-          <TriageCard rows={3} />
+          <HeroFindings limit={3} className="max-w-[440px]" />
         </BrushPanel>
       </div>
     </Panel>

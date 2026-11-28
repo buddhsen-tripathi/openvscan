@@ -49,6 +49,14 @@
   --color-brush-sand-stroke: #5b4d3a;
   --color-brush-sand-wash: #f1ece2;
 
+  /* Gradient + contour panels (components/brand/ContourPanel.tsx). */
+  --color-glow-base: #b9d3c1;
+  --color-glow-pine: #3f8a64;
+  --color-glow-leaf: #8fcaa4;
+  --color-glow-mist: #e8f0e6;
+  --color-glow-ochre: #e5c27a;
+  --color-glow-line: rgb(255 255 255 / 0.34);
+
   /* Strong curves (emil-design-eng). These replace Tailwind's ease-out and
      ease-in-out, so every `ease-out` utility gets the punchier curve. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -143,6 +151,13 @@
   --color-brush-sand-base: #221e18;
   --color-brush-sand-stroke: #463b2c;
   --color-brush-sand-wash: #2a251e;
+
+  --color-glow-base: #15211b;
+  --color-glow-pine: #1f4a36;
+  --color-glow-leaf: #2b5c43;
+  --color-glow-mist: #1d2b24;
+  --color-glow-ochre: #4a3a21;
+  --color-glow-line: rgb(255 255 255 / 0.07);
 }
 
 .dark,
@@ -200,6 +215,8 @@
 :root {
   --font-sans: Geist, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Editorial serif for the marketing headlines only. */
+  --font-serif: Newsreader, ui-serif, Georgia, serif;
   --radius: 0.5rem;
 }
 
@@ -280,6 +297,7 @@
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
 
   --radius-md: calc(var(--radius) - 2px);
 
@@ -314,6 +332,13 @@
   .font-display {
     font-family: var(--font-sans);
     font-weight: 600;
+  }
+  /* Marketing headlines: the serif at display optical size. */
+  .font-editorial {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-optical-sizing: auto;
+    letter-spacing: -0.022em;
   }
   .tabular {
     font-variant-numeric: tabular-nums;

@@ -36,7 +36,7 @@ export async function devRoute(request: Request, env: Env): Promise<Response> {
     for (const name of SCANNERS) {
       const spec = SCANNER_SPECS[name];
       const s = Date.now();
-      await sb.setEgress(name === "trivy" ? { phase: "scan" } : { phase: "locked" });
+      await sb.setEgress({ phase: spec.egress });
       const r = await sb.exec(spec.argv, { env: spec.env, timeoutSec: spec.timeoutSec });
       await sb.lockEgress();
       const raw = await sb.readText(spec.outputPath);
@@ -114,7 +114,7 @@ export async function devRoute(request: Request, env: Env): Promise<Response> {
       for (const name of SCANNERS) {
         const spec = SCANNER_SPECS[name];
         const s = Date.now();
-        await box.setEgress(name === "trivy" ? { phase: "scan" } : { phase: "locked" });
+        await box.setEgress({ phase: spec.egress });
         const r = await box.exec(spec.argv, { env: spec.env, timeoutSec: spec.timeoutSec });
         await box.lockEgress();
         const raw = await box.readText(spec.outputPath);

@@ -1,10 +1,13 @@
 import {
   AGENT_INFO,
   type AgentProvider,
+  builtinSkill,
   type CodexLogin,
   countBySeverity,
   CREDENTIAL_INFO,
   type FailThreshold,
+  fitSkillsToBudget,
+  isBuiltinSkillId,
   openSecret,
   isRelevant,
   matchesPath,
@@ -15,6 +18,7 @@ import {
   type ScannerStat,
   type Severity,
   severityRank,
+  SKILL_LIMITS,
 } from "@openvscan/core";
 import { chunk } from "@openvscan/db";
 import {
@@ -38,8 +42,10 @@ import {
   DIFF_PATH,
   FINDINGS_PATH,
   parseAgentReview,
+  planSkillFiles,
   PROMPT_PATH,
   REVIEW_PATH,
+  type RunSkill,
   TASK_DIR,
   WORK_DIR,
 } from "./agent";
@@ -84,7 +90,9 @@ import {
   OUT_DIR,
   REPO_DIR,
   relPath,
+  HISTORY_RANGE,
   SCANNER_SPECS,
+  skipReason,
 } from "./scanners";
 
 interface ReviewParams {
@@ -115,6 +123,8 @@ interface RunContext {
   instructions: string | null;
   focus: ReviewFocus[];
   ignorePaths: string[];
+  /** Review skill ids, in selection order. */
+  skills: string[];
 }
 
 const AI_POLL_INTERVAL = "30 seconds";
@@ -168,10 +178,22 @@ export class ReviewWorkflow extends WorkflowEntrypoint<Env, ReviewParams> {
         await updateRun(getDb(env), runId, { phase: "scanning" });
         return true;
       });
+      // A scanner whose files the PR didn't touch is skipped (see SCANNER_INFO triggers).
+      const skips = await step.do("scan:plan", async () => {
+        const diff = c.isPr ? await loadDiffMap(env, runId) : null;
+        const changed = diff ? Object.keys(diff) : null;
+        const known = c.scanners.filter((n) => (SCANNERS as readonly string[]).includes(n));
+        return Object.fromEntries(known.map((name) => [name, skipReason(name, changed)]));
+      });
       const stats: Record<string, ScannerStat> = {};
       for (const name of SCANNERS) {
         if (!c.scanners.includes(name)) {
-          stats[name] = { status: "skipped", findings: 0 };
+          stats[name] = { status: "skipped", findings: 0, reason: "Turned off for this repository" };
+          continue;
+        }
+        const reason = skips[name] ?? null;
+        if (reason) {
+          stats[name] = { status: "skipped", findings: 0, reason };
           continue;
         }
         try {
@@ -305,6 +327,7 @@ async function loadContext(db: Db, runId: string): Promise<RunContext | null> {
     instructions: run.instructions,
     focus: run.focus,
     ignorePaths: run.ignorePaths,
+    skills: run.skills,
   };
 }
 
@@ -364,6 +387,11 @@ async function loadDiffMap(env: Env, runId: string): Promise<DiffMap | null> {
  * read-only token scoped to this one repository. Daytona: a codeload
  * tarball URL that expires within minutes, so no token enters the sandbox.
  */
+/** A branch name git accepts on the command line as a ref, without surprises. */
+function isSafeRef(ref: string): boolean {
+  return /^[\w./-]{1,200}$/.test(ref) && !ref.startsWith("-") && !ref.includes("..");
+}
+
 async function checkout(env: Env, sb: Box, c: RunContext): Promise<void> {
   await sb.start();
   const creds = { ...appCreds(env), installationId: c.installationId };
@@ -385,10 +413,18 @@ async function checkout(env: Env, sb: Box, c: RunContext): Promise<void> {
         "sh",
         "-c",
         `set -e
-rm -rf "$1" && git init -q "$1" && cd "$1"
+rm -rf "$1" "$7" && git init -q "$1" && cd "$1"
 git remote add origin "$2"
-git fetch -q --no-tags --depth=1 origin "$3"
-git -c advice.detachedHead=false checkout -q FETCH_HEAD
+# A pull request: its own commits, plus their parents on the base branch,
+# so Gitleaks can scan each commit's diff (HISTORY_RANGE). Anything else,
+# or if that fails (base branch gone, odd history): the head commit only.
+if [ -n "$6" ] && git fetch -q --no-tags --shallow-exclude="refs/heads/$6" origin "$3" 2>/dev/null \
+  && git fetch -q --no-tags --deepen=1 origin "$3" 2>/dev/null; then
+  echo "$3 --not $(paste -sd ' ' .git/shallow)" >"$7"
+else
+  git fetch -q --no-tags --depth=1 origin "$3"
+fi
+git -c advice.detachedHead=false checkout -q "$3"
 mkdir -p "$4"
 echo "$3" >"$5"`,
         "checkout",
@@ -397,6 +433,8 @@ echo "$3" >"$5"`,
         c.headSha,
         OUT_DIR,
         CHECKOUT_MARKER,
+        c.isPr && c.baseRef && isSafeRef(c.baseRef) ? c.baseRef : "",
+        HISTORY_RANGE,
       ],
       { timeoutSec: 600 },
     );
@@ -463,22 +501,14 @@ async function runScanner(
   await ensureRepo(env, sb, c);
   await logRun(db, c.runId, "info", `Running ${name}`);
 
-  // Trivy may refresh its vulnerability DB; nothing else gets network.
-  await sb.setEgress(name === "trivy" ? { phase: "scan" } : { phase: "locked" });
+  await sb.setEgress(spec.egress === "scan" ? { phase: "scan" } : { phase: "locked" });
   let res: { exitCode: number; stderr: string };
   try {
     res = await sb.exec(spec.argv, { env: spec.env, timeoutSec: spec.timeoutSec });
-    if (name === "trivy" && res.exitCode !== 0) {
-      await logRun(db, c.runId, "warn", "Trivy DB refresh failed; using the DB bundled in the image");
-      res = await sb.exec([...spec.argv.slice(0, -1), "--skip-db-update", spec.argv.at(-1) as string], {
-        env: spec.env,
-        timeoutSec: spec.timeoutSec,
-      });
-    }
   } finally {
     await sb.lockEgress();
   }
-  if (res.exitCode !== 0) {
+  if (!(spec.okExitCodes ?? [0]).includes(res.exitCode)) {
     throw new Error(`${name} exited ${res.exitCode}: ${res.stderr.trim().slice(-400)}`);
   }
 
@@ -528,7 +558,14 @@ async function toRow(
     startLine: f.startLine,
     endLine: f.endLine,
     inDiff:
-      f.metadata?.kind === "dependency"
+      // A secret this PR added in one commit and removed in another: still in
+      // the branch's history, so it counts as part of the change.
+      f.metadata?.kind === "secret" && f.metadata.commit && f.startLine == null
+        ? true
+        : f.metadata?.kind === "vendored"
+          ? // The library's directory: in the diff when the PR changed a file in it.
+            Boolean(diff && f.filePath && Object.keys(diff).some((p) => p.startsWith(`${f.filePath}/`)))
+          : f.metadata?.kind === "dependency"
         ? isDependencyInDiff(
             diff,
             f.filePath,
@@ -643,6 +680,9 @@ async function startAgent(
   const diffText = c.isPr ? await (await env.ARTIFACTS.get(`runs/${c.runId}/pr.diff`))?.text() : null;
   await sb.writeText(DIFF_PATH, diffText ?? "(no pull request diff: manual branch review)\n");
   await sb.writeText(FINDINGS_PATH, JSON.stringify(findingsJson, null, 2));
+  const skills = await loadRunSkills(db, c);
+  const skillFiles = planSkillFiles(skills, provider);
+  for (const f of skillFiles.files) await sb.writeText(f.path, f.content);
   await sb.writeText(
     PROMPT_PATH,
     buildPrompt({
@@ -659,6 +699,7 @@ async function startAgent(
       instructions: c.instructions,
       focus: c.focus,
       ignorePaths: c.ignorePaths,
+      skills: skillFiles.listed,
     }),
   );
 
@@ -682,6 +723,48 @@ async function startAgent(
     `AI review started with ${AGENT_INFO[provider].label} (${CREDENTIAL_INFO[kind].label}), ${findingsJson.length} scanner finding(s) to triage`,
   );
   return { ok: true, findingIds: ordered.map((f) => f.id) };
+}
+
+/**
+ * The run's review skills: built-ins from core, user skills from D1 by id
+ * and owner (the repository owner's own skills only), in selection order and
+ * within the agent's text budget. Missing and skipped skills are logged.
+ */
+async function loadRunSkills(db: Db, c: RunContext): Promise<RunSkill[]> {
+  const ids = c.skills ?? [];
+  if (!ids.length) return [];
+  const userIds = ids.filter((id) => !isBuiltinSkillId(id));
+  const rows = new Map<string, RunSkill>();
+  for (const part of chunk(userIds, 90)) {
+    const found = await db.query.reviewSkill.findMany({
+      where: and(eq(schema.reviewSkill.userId, c.userId), inArray(schema.reviewSkill.id, part)),
+      columns: { id: true, name: true, description: true, body: true },
+    });
+    for (const r of found) rows.set(r.id, r);
+  }
+  const selected: RunSkill[] = [];
+  let missing = 0;
+  for (const id of ids) {
+    const skill = isBuiltinSkillId(id) ? builtinSkill(id) : rows.get(id);
+    if (skill) selected.push({ name: skill.name, description: skill.description, body: skill.body });
+    else missing++;
+  }
+  const { included, skipped } = fitSkillsToBudget(selected, SKILL_LIMITS.runBudget);
+  if (missing) {
+    await logRun(db, c.runId, "warn", `${missing} review skill(s) were deleted after this review was queued and were left out`);
+  }
+  if (skipped.length) {
+    await logRun(
+      db,
+      c.runId,
+      "warn",
+      `Review skills over the ${SKILL_LIMITS.runBudget / 1024} KB budget were left out: ${skipped.map((s) => s.name).join(", ")}`,
+    );
+  }
+  if (included.length) {
+    await logRun(db, c.runId, "info", `Review skills: ${included.map((s) => s.name).join(", ")}`);
+  }
+  return included;
 }
 
 async function collectAgent(
@@ -833,6 +916,10 @@ async function publish(
     scannerErrors: Object.entries(stats)
       .filter(([, s]) => s.status === "failed")
       .map(([n, s]) => `${n} failed: ${s.error ?? "error"}`),
+    scannersRan: Object.entries(stats)
+      .filter(([, s]) => s.status === "ok")
+      .map(([n]) => n),
+    scannersSkipped: Object.values(stats).filter((s) => s.status === "skipped").length,
   };
   const conclusion = decideConclusion(findings, rctx);
   const gh = githubFor(env, c.installationId);

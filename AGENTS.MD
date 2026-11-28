@@ -23,7 +23,7 @@ It is self-hostable and also offered as a hosted cloud, like PostHog. Scope is
 |------|------|----------------|
 | Web Worker `openvscan-web` | `web/` | TanStack Start UI, sign-in pages over the WorkOS API (plain fetch, no SDK), server functions, GitHub account linking, GitHub webhook + install callback, encrypted credential storage, remote MCP server (`/mcp`). Inserts `run` rows and calls the engine. |
 | Engine Worker `openvscan-engine` | `engine/` | `EngineApi` RPC entrypoint, `ReviewWorkflow` (Cloudflare Workflow), `ScanSandbox` (Durable Object + Container), `Outbound` (egress policy proxy). Owns every write to a run after creation. |
-| `@openvscan/core` | `packages/core` | Enums (statuses, phases, severities, scanners, credential kinds), review policy (`policy.ts`: triggers, models, focus presets, path globs, PR commands), severity helpers, agent review zod schema, AES-GCM `sealSecret`/`openSecret`, Codex `auth.json` parsing (`codex.ts`), `EngineRpc` interface. |
+| `@openvscan/core` | `packages/core` | Enums (statuses, phases, severities, scanners, credential kinds), review policy (`policy.ts`: triggers, models, focus presets, path globs, PR commands), severity helpers, agent review zod schema, AES-GCM `sealSecret`/`openSecret`, Codex `auth.json` parsing (`codex.ts`), review skills (`skills.ts` normalisation/frontmatter/URL rules, `skill-import.ts`, `builtin-skills.ts`), `EngineRpc` interface. |
 | `@openvscan/db` | `packages/db` | Drizzle `sqlite-core` schema + D1 migrations (shared by both Workers). |
 | `@openvscan/github` | `packages/github` | Octokit App auth, webhook verify, scoped read-only tokens, check runs, reviews, summary comment upsert. Only this package imports octokit. |
 
@@ -38,10 +38,15 @@ pull_request webhook ─► web: upsert pull_request, dedupe by head sha,
                         ENGINE.startRun(runId)
 engine ReviewWorkflow (id = runId), each step durable + retried:
   load → github:check-run → github:diff (PR files → R2 diff.json / pr.diff)
-  → sandbox:checkout (git fetch head sha, egress = checkout)
-  → scan:<trivy|opengrep|gitleaks> (egress = scan; raw → R2; parsed → finding)
-  → ai:start (decrypt credential, write PROMPT.md + findings, egress = agent,
-              start agent as a detached task)
+  → sandbox:checkout (git fetch head sha; a PR also fetches its own commits,
+    --shallow-exclude=base then --deepen=1, and writes HISTORY_RANGE for
+    Gitleaks; falls back to depth 1; egress = checkout)
+  → scan:plan (PR: skip scanners whose SCANNER_INFO triggers match no changed file)
+  → scan:<opengrep|osv|gitleaks|trivy|zizmor|poutine|spectral>
+    (egress = spec.egress; raw → R2;
+    parsed → finding)
+  → ai:start (decrypt credential, write PROMPT.md + findings + review
+              skills, egress = agent, start agent as a detached task)
   → ai:wait:i / ai:poll:i (sleep 30s, poll, honour cancel)  ×≤50
   → ai:collect (lock egress, validate review.json, apply triage, add AI findings)
     (an AI error → ai:failed: lock egress, record ai_error, keep going)
@@ -60,7 +65,7 @@ engine and the dashboard): **fail** when any finding meets all of:
 - severity is at or above `run.fail_on`,
 - on a PR, it is in the diff (`in_diff`); manual branch runs count everything,
 - `ai_verdict` is not `false_positive`, except that the AI can't dismiss a
-  Gitleaks secret (`aiMayDismiss`).
+  Gitleaks secret or an OSV `MAL-` malicious package (`aiMayDismiss`).
 
 Otherwise the conclusion is **pass**, unless a finding would have blocked but
 for an AI dismissal (`isOverruled`): then **neutral**, and the summary lists
@@ -80,7 +85,7 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
   - `locked`: nothing.
   - `checkout`: git-upload-pack for one repo; adds a read-only token scoped to
     that single repo.
-  - `scan`: GET to the Trivy DB hosts.
+  - `scan`: OSV-Scanner's lookups on `api.osv.dev` only (`scanAllowed`).
   - `agent`: model calls only (`egress-rules.ts`: no files, batches,
     stored responses or key minting) on `api.anthropic.com`,
     `api.openai.com`, or `chatgpt.com`
@@ -172,18 +177,31 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
 - `github.ts`:
   - `github_installation`
   - `repository`: per-repo policy (`review_trigger`, `skip_drafts`,
-    `base_branches`, `ignore_paths`, `focus`, `scanners`,
-    `agent`, `agent_model`, `instructions`, `fail_on`)
+    `base_branches`, `ignore_paths`, `focus`, `skills`, `scanners`,
+    `agent`, `agent_model`, `instructions`, `fail_on`). `skills` is a JSON
+    array of skill ids in selection order: the owner's `review_skill` ids
+    or `builtin:<slug>`.
   - `agent_credential`: one per (user, provider). Holds the ciphertext and IV;
     the row id is used as AAD.
+- `skills.ts`:
+  - `review_skill`: one user's skill (`name` unique per user,
+    `description`, `body` without frontmatter, `source` paste/upload/url,
+    `source_url`, `sha256` of the body). A normalised snapshot: imports are
+    never re-fetched. Deleting one removes its id from the user's
+    repositories (`deleteSkill`).
 - `review.ts`:
   - `pull_request`: `paused` is set by the `pause` comment command
-  - `run`: status, phase, conclusion, a policy snapshot, AI summary and risk,
-    counts, and GitHub ids
+  - `run`: status, phase, conclusion, a policy snapshot (including
+    `skills`), AI summary and risk, counts, and GitHub ids
   - `finding`: `source` is a scanner or `ai`. Also `in_diff`, `fingerprint`,
     `ai_verdict` and `ai_reasoning`.
   - `run_log`
 - `integer({ mode: "timestamp" })` stores epoch **seconds**.
+- Read every generated migration. For a changed default or constraint,
+  drizzle-kit rebuilds the table (`DROP TABLE` + rename). D1 ignores
+  `PRAGMA foreign_keys=OFF`, so dropping `repository` would cascade-delete
+  pull requests and runs. Write a data-only custom migration
+  (`drizzle-kit generate --custom`) and keep the default in code instead.
 - D1 allows 100 bound params per statement, so multi-row inserts and large
   `IN` lists are chunked (`chunk()` from `@openvscan/db`; `batchAll()` in
   `engine/src/db.ts` runs statements in batches of 50).
@@ -222,6 +240,20 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
 - The agent runs with cwd `/workspace/.openvscan`, outside the checkout at
   `/workspace/repo`, so the PR's `CLAUDE.md`, `AGENTS.md`, `.claude/` hooks
   and `.mcp.json` are never loaded.
+- Review skills (`web/content/docs/review-skills.mdx`): at `ai:start`
+  `loadRunSkills` (workflow.ts) loads the run's `skills` snapshot, built-ins
+  from core and user skills by id AND repository owner, keeps them within
+  `SKILL_LIMITS.runBudget` (120 KB, selection order) and logs loaded,
+  skipped and missing ones. `planSkillFiles` (agent.ts) writes
+  `/workspace/.openvscan/skills/<slug>/SKILL.md`, plus
+  `.claude/skills/<slug>/SKILL.md` for Claude Code's native loading, and
+  PROMPT.md gets a "Review skills (trusted, from the repository owner)"
+  section. Skill text is normalised on save (`normalizeSkill`: invisible,
+  bidi and tag characters stripped, CRLF, caps). URL import
+  (`previewSkillUrl` → `importSkillFromUrl`) is server-side: https,
+  allowlisted hosts (GitHub, raw, gists, skills.sh), manual redirects to
+  allowlisted hosts only, 10s, 64 KB, text only; skills.sh pages map to the
+  repo's SKILL.md with that frontmatter name.
 - The prompt fences PR title, body and file list as untrusted. The agent's only output is
   `/workspace/.openvscan/review.json`, validated against `AgentReviewSchema`.
   Triage verdicts are accepted only for finding ids that were given to the
@@ -238,14 +270,15 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
 | `web/lib/server.ts` | overview, runs, rerun/cancel, credentials server fns |
 | `web/lib/account-server.ts` | account page: profile, GitHub link/unlink, WorkOS sessions, delete account |
 | `web/lib/github-server.ts` | connect/list/configure repositories, manual run |
+| `web/lib/skills-server.ts` | review skills: list/get/save/delete, URL preview, repository selection checks |
 | `web/src/routes/api/github/webhook.ts` | `pull_request` (per-repo `review_trigger`), `issue_comment` (`@<app> review/pause/resume/help`, write access only), `check_run` (re-run), installation events |
 | `web/src/routes/api/github/setup.ts` | install callback (`syncInstallation`: personal owner or org admin only; first owner keeps it) |
 | `engine/src/workflow.ts` | the pipeline |
-| `engine/src/scanners/index.ts` | scanner argv + output parsers (normalize, group, cap 500/scanner) |
+| `engine/src/scanners/` | one file per scanner (`ScannerSpec`: argv, ok exit codes, egress, parser); `index.ts` registry, `skipReason`, cap 500/scanner |
 | `engine/src/diff.ts` | PR patch → commentable lines, `in_diff`, unified diff for the agent |
 | `engine/src/report.ts` | conclusion, check output, annotations, inline comments, summary markdown (sanitized) |
 | `engine/src/dev.ts` | `/__dev/scan`, `/__dev/agent`, `/__dev/daytona`, `/__dev/destroy` (only with `DEV_ROUTES=true`) |
-| `engine/container/Dockerfile` | scanners + agents image (Trivy DB baked in) |
+| `engine/container/Dockerfile` | scanners + agents image; binaries pinned by SHA-256; OpenGrep rules curated at build (`container/rules/curate.py`, `prune.sh`) |
 
 ## Commands
 
@@ -307,7 +340,11 @@ pnpm run deploy           # engine, then web (`pnpm deploy` alone is a pnpm buil
   and re-insert by `run_id` + source. Reuse saved GitHub ids
   (`check_run_id`, `review_id`, `summary_comment_id`).
 - Do not include Semgrep registry rules; their license forbids this use.
-- The bundled opengrep-rules are LGPL-2.1 with the Commons Clause.
+- Rule packs: opengrep-rules (LGPL-2.1 + Commons Clause), GitLab sast-rules
+  (MIT; `rules/lgpl` LGPL-3.0), Trail of Bits (AGPL-3.0), 0xdea (MIT).
+- Scanners must not honour anything in the PR that could switch them off
+  (config files, ignore files, suppression comments). Gitleaks reads a root
+  `.gitleaksignore` regardless of flags, so its spec deletes it first.
 - AI review uses the **repo owner's** credential. So it starts on its own
   only for PR authors with write access; anyone else's PR (forks, bots) gets
   scanners only until a writer comments `@<app> review`.

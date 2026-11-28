@@ -19,6 +19,7 @@ import {
   createAndStartRun,
   requestCancel,
 } from "@/lib/runs";
+import { describeSkills } from "@/lib/skills";
 import { requireUserId } from "@/lib/user";
 import { getEnv } from "@/src/lib/env";
 
@@ -135,13 +136,14 @@ export const getRun = createServerFn({ method: "GET" })
     const userId = await requireUserId();
     const run = await requireRun(userId, id);
     const db = getDb();
-    const [findings, logs] = await Promise.all([
+    const [findings, logs, skills] = await Promise.all([
       db.query.finding.findMany({ where: eq(schema.finding.runId, id) }),
       db.query.runLog.findMany({
         where: eq(schema.runLog.runId, id),
         orderBy: [asc(schema.runLog.timestamp)],
         limit: 500,
       }),
+      describeSkills(userId, run.skills),
     ]);
     const rank = (s: Severity) => SEVERITIES.indexOf(s);
     findings.sort(
@@ -161,6 +163,7 @@ export const getRun = createServerFn({ method: "GET" })
         > | null,
       })),
       logs,
+      skills,
     };
   });
 

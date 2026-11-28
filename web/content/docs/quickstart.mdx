@@ -39,7 +39,7 @@ A newly connected repository uses this policy:
 
 - Every pull request is reviewed on open, push, reopen and ready for review.
 - Draft pull requests are skipped.
-- Trivy, Opengrep and Gitleaks are all on.
+- All seven scanners are on: OpenGrep, OSV-Scanner, Gitleaks, Trivy, zizmor, poutine and Spectral. Each one skips a pull request that changes none of its files.
 - The AI reviewer is off (**None**).
 - The check fails on findings of **High** severity or above.
 

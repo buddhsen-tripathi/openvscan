@@ -6,9 +6,11 @@ import {
   Faq,
   FinalCta,
   Hero,
-  HowItWorks,
   OnThePr,
+  ScannerRow,
+  Skills,
   WaysToRun,
+  WhatsNew,
 } from "@/components/landing/Sections";
 import Navbar from "@/components/Navbar";
 
@@ -23,8 +25,10 @@ function LandingPage() {
         <Navbar />
         <main>
           <Hero />
-          <HowItWorks />
+          <ScannerRow />
+          <WhatsNew />
           <OnThePr />
+          <Skills />
           <Details />
           <WaysToRun />
           <Faq />
