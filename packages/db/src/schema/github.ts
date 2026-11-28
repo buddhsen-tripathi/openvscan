@@ -72,6 +72,11 @@ export const repository = sqliteTable(
     instructions: text("instructions"),
     /** Prompt presets that steer the AI review. */
     focus: text("focus", { mode: "json" }).$type<ReviewFocus[]>().default([]).notNull(),
+    /**
+     * Review skills given to the AI reviewer, in selection order: ids of the
+     * owner's `review_skill` rows, or `builtin:<slug>`.
+     */
+    skills: text("skills", { mode: "json" }).$type<string[]>().default([]).notNull(),
     /** Base branches whose PRs are reviewed automatically; empty = all. */
     baseBranches: text("base_branches", { mode: "json" }).$type<string[]>().default([]).notNull(),
     /** Globs for files whose findings are dropped. */

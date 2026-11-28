@@ -1,0 +1,120 @@
+---
+title: Review skills
+description: Give the AI reviewer your own checklists and conventions as markdown skills, or use the built-in OWASP-based ones.
+---
+
+A review skill is a markdown file of instructions for the AI reviewer: your team's conventions, a checklist for your framework, or how your code is meant to handle money, tenants or tokens. You add skills once, in **Settings → Review skills**, and pick which ones each repository uses. On every review the agent gets the selected skills next to the diff and applies the ones that match the change.
+
+Skills only affect the [AI review](/docs/ai-review). They need an AI reviewer selected on the repository.
+
+## Built-in skills
+
+OpenVScan ships four skills, written for this project. They cite OWASP and CWE identifiers so findings can reference them.
+
+| Skill | Use it for |
+|-------|-----------|
+| **OWASP ASVS checklist** | About 40 review questions keyed to ASVS 5.0 chapters, grouped by what the diff touches: access control, authentication, sessions and tokens, validation and encoding, injection, cryptography, files, API, configuration, logging. |
+| **API security** | The OWASP API Security Top 10 (2023): object, property and function level authorization (BOLA, BOPLA, BFLA), mass assignment, SSRF, and expensive endpoints anyone can call. |
+| **LLM application security** | Apps that call language models: prompt injection through untrusted content, unsafe handling of model output, tools with too much power, secrets in prompts, unbounded model spend. |
+| **CI/CD security** | GitHub Actions and other CI: `pull_request_target` checking out PR code, script injection from `${{ github.event.* }}`, broad token permissions, unpinned third-party actions, secrets reachable from forks, self-hosted runners. |
+
+Each one tells the reviewer what to look for, what evidence a finding needs (a concrete path from attacker input to impact) and the common false positives to skip. Open **View** next to a built-in in Settings to read it.
+
+## Add a skill
+
+Open **Settings → Review skills** and click **Add skill**. There are three ways in:
+
+- **Paste**: paste markdown, then click **Continue**.
+- **Upload**: pick a `.md` file (a `SKILL.md` or any markdown file) up to 64 KB.
+- **Import URL**: enter a link and click **Fetch and preview**. See [URL import](#url-import).
+
+All three end on the same preview: the name, description and full instructions, which you can edit before you click **Save skill**. Read the instructions before saving. The reviewer follows them as yours.
+
+Then open a repository, switch to **Review policy**, and tick the skills under **AI review → Review skills**. Save the policy. The next review uses them.
+
+You can **View**, **Edit** and **Delete** your skills in Settings. Deleting a skill also removes it from every repository that uses it. Built-in skills can be viewed but not edited.
+
+## Format
+
+A skill is markdown with optional YAML frontmatter, the same shape as an Agent Skills `SKILL.md`:
+
+```markdown
+---
+name: payments-review
+description: Money handling in the billing service. Use on changes under billing/ or to amounts and currencies.
+---
+
+All amounts are integer cents in `Money` (billing/money.ts). Flag float
+arithmetic on amounts, and any refund path that doesn't check the original
+charge belongs to the same customer.
+```
+
+- `name` and `description` from the frontmatter fill in the form. Other keys are ignored. Without frontmatter you type the name; for an uploaded or imported file it defaults to the file's folder or file name.
+- The **name** is up to 80 characters and must be unique among your skills. The **description** is up to 300 characters; the agent sees it in a list and uses it to decide when the skill applies, so say what kind of change it is for.
+- The **instructions** (everything after the frontmatter) can be up to 64 KB.
+- Only the single markdown file is used. A skill that relies on scripts or extra reference files next to its `SKILL.md` gets only the `SKILL.md` text.
+
+## URL import
+
+The server fetches the URL once, shows you the result, and saves what you approve. It is never fetched again: to pick up a newer version, import it again or edit the skill.
+
+Accepted links:
+
+| Link | What is fetched |
+|------|-----------------|
+| `https://github.com/<owner>/<repo>/blob/<ref>/<path>` | The file, from `raw.githubusercontent.com`. |
+| `https://github.com/<owner>/<repo>/tree/<ref>/<dir>` | `<dir>/SKILL.md`. |
+| `https://github.com/<owner>/<repo>` | `SKILL.md` at the repository root. |
+| `https://raw.githubusercontent.com/...` | The file. |
+| `https://gist.github.com/<user>/<id>` | The gist's first file. |
+| `https://skills.sh/<owner>/<repo>/<skill>` | The `SKILL.md` in the GitHub repository `<owner>/<repo>` whose frontmatter `name` is `<skill>`. OpenVScan tries the usual folders first, then searches the repository's file list. |
+
+Rules:
+
+- `https://` only, on the hosts above. No credentials or custom ports in the URL; query strings are dropped.
+- Redirects are followed by hand, up to five, and only to the same allowlisted hosts.
+- 10 seconds per request, 64 KB per file, and the response must be UTF-8 text. Binary files are refused.
+- Only public files work: the request carries no GitHub credentials.
+
+## Security model
+
+The AI reviewer reads code that the pull request's author controls, so OpenVScan treats everything from the pull request as untrusted data. Skills are different: only you can add them and attach them to your repositories, so the agent treats them as your instructions, like the repository's **Instructions** field. That also means a skill from a stranger is a stranger's instructions to your reviewer, so read it first.
+
+What OpenVScan does to keep skills honest:
+
+- **Snapshots.** A skill is stored as text with its sha256. Imports are never re-fetched, so a change upstream can't alter your reviews.
+- **Hidden text removed.** Zero-width characters, text-direction controls (the "Trojan Source" characters), the byte-order mark and Unicode tag characters are stripped from every skill, and the preview warns when an import contained any. Line endings are normalised.
+- **Server-side fetch, allowlisted hosts.** See [URL import](#url-import).
+- **Your skills only.** A repository can use the built-ins and its owner's skills, nothing else; the server checks every id when you save the policy and again when a review starts.
+- **The pull request can't add skills.** Skills come from your account, never from the repository under review. The agent runs outside the checkout, so a `.claude/skills` folder or `AGENTS.md` in the pull request is not loaded.
+- **Same sandbox.** Skills don't change what the agent can do: it stays read-only, with network access only to the model API. The prompt tells the agent that skills add checks but can't change the output format or the review rules.
+
+## Limits
+
+| Limit | Value |
+|-------|-------|
+| Skills per account | 50 |
+| Skills per repository | 20 |
+| Skill instructions | 64 KB |
+| Skill text per review | 120 KB |
+
+If the selected skills add up to more than 120 KB, the review keeps them in the order you ticked them and leaves out any that don't fit. The review's log lists the skills it loaded and any it left out, and the review page shows them under the AI review.
+
+## How the agent gets them
+
+When the AI step starts, OpenVScan writes each selected skill to `/workspace/.openvscan/skills/<slug>/SKILL.md` in the sandbox. For Claude Code it also writes a copy to `/workspace/.openvscan/.claude/skills/`, where Claude Code loads project skills natively. The prompt lists every skill with its name, description and path, and tells the agent to read the ones that match the change.
+
+The repository's policy is copied onto each review when it is created, including its skill list, so editing a repository's skills doesn't change a review that is already running.
+
+## Writing good skills
+
+- **Write for a reviewer, not an author.** Say what to look for in a diff and what makes it a real problem: "a handler under `api/admin/` that doesn't call `requireAdmin()`" beats "use proper authorization".
+- **Name your project's guards.** Point at the helpers, middleware and wrappers that make code safe, so the agent can confirm them instead of reporting false positives.
+- **Ask for evidence.** Describe what a reportable finding needs: the input an attacker controls, the path to the sink, the missing check.
+- **List known false positives.** Fixtures, generated code, patterns that look dangerous but aren't in your codebase.
+- **Keep the description specific.** It decides when the agent opens the skill. "Billing service: money, refunds, currencies" is better than "Important rules".
+- **One topic per skill.** Several small skills are easier to pick per repository than one large one, and stay under the per-review budget.
+
+## MCP
+
+The [MCP server](/docs/mcp) has a `list_skills` tool, and `update_repository_settings` accepts `skills`: a list of ids from `list_skills` (built-ins look like `builtin:owasp-asvs`). The list replaces the current one; `[]` removes all skills.

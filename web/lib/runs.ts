@@ -56,6 +56,7 @@ export async function createAndStartRun(
     instructions: input.repo.instructions,
     focus: input.repo.focus,
     ignorePaths: input.repo.ignorePaths,
+    skills: input.aiSkipped ? [] : input.repo.skills,
   });
 
   try {

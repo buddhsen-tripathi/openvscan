@@ -21,6 +21,7 @@ import {
 } from "@/lib/github-server";
 import { cancelActiveRunsForPr } from "@/lib/runs";
 import { cancelRun, getRun, listRuns, rerun } from "@/lib/server";
+import { listSkills } from "@/lib/skills-server";
 import { runAsUser } from "@/lib/user";
 import { getEnv } from "@/src/lib/env";
 
@@ -218,6 +219,7 @@ function buildServer(userId: string): McpServer {
           aiRisk: run.aiRisk,
           aiError: run.aiError,
           aiSkipped: run.aiSkipped,
+          skills: run.skills.map((s) => s.name),
           error: run.error,
           counts: run.counts,
           url: appUrl(`/dashboard/runs/${run.id}`),
@@ -337,6 +339,32 @@ function buildServer(userId: string): McpServer {
   );
 
   server.registerTool(
+    "list_skills",
+    {
+      title: "List review skills",
+      description:
+        "Review skills the AI reviewer can use: OpenVScan's built-ins and the ones you added in Settings. Pass their ids in update_repository_settings `skills`.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    () =>
+      tool(async () => {
+        const { builtins, skills } = await listSkills();
+        return json(
+          [...builtins, ...skills].map((s) => ({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            builtin: s.builtin,
+            source: s.source,
+            sourceUrl: s.sourceUrl,
+            updatedAt: s.updatedAt,
+          })),
+        );
+      }),
+  );
+
+  server.registerTool(
     "get_repository_settings",
     {
       title: "Get repository settings",
@@ -363,6 +391,7 @@ function buildServer(userId: string): McpServer {
             agent: r.agent,
             agentModel: r.agentModel,
             focus: r.focus,
+            skills: r.skills,
             instructions: r.instructions,
             failOn: r.failOn,
           },
@@ -409,6 +438,13 @@ function buildServer(userId: string): McpServer {
           .describe("null turns the AI reviewer off"),
         agent_model: z.string().nullable().optional(),
         focus: z.array(z.enum(REVIEW_FOCUS)).optional(),
+        skills: z
+          .array(z.string())
+          .max(20)
+          .optional()
+          .describe(
+            "Review skill ids from list_skills, in priority order. Replaces the current list; [] removes all.",
+          ),
         instructions: z.string().max(4000).nullable().optional(),
         fail_on: z.enum(FAIL_THRESHOLDS).optional(),
       },
@@ -431,6 +467,7 @@ function buildServer(userId: string): McpServer {
                 ? repo.agentModel
                 : input.agent_model,
             focus: input.focus ?? repo.focus,
+            skills: input.skills ?? repo.skills,
             instructions:
               input.instructions === undefined
                 ? repo.instructions

@@ -128,6 +128,12 @@ export const DOC_TABS: DocTab[] = [
               "Every per-repository review setting, what it does, and its default.",
           },
           {
+            slug: "review-skills",
+            title: "Review skills",
+            description:
+              "Give the AI reviewer your own checklists and conventions as markdown skills, or use the built-in OWASP-based ones.",
+          },
+          {
             slug: "agent-credentials",
             title: "Agent credentials",
             description:

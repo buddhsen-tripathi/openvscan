@@ -29,6 +29,7 @@ import {
 } from "@/lib/github";
 import { isGithubLinkConfigured, linkedGithub } from "@/lib/github-account";
 import { createAndStartRun, releaseRepositories } from "@/lib/runs";
+import { validateSkillSelection } from "@/lib/skills-server";
 import { requireUserId } from "@/lib/user";
 import { getEnv } from "@/src/lib/env";
 
@@ -224,6 +225,8 @@ export interface RepositorySettingsInput {
   agent: AgentProvider | null;
   agentModel: string | null;
   focus: ReviewFocus[];
+  /** Review skill ids in selection order (`builtin:<slug>` or the user's). */
+  skills: string[];
   instructions: string | null;
   failOn: FailThreshold;
 }
@@ -296,6 +299,11 @@ export const updateRepositorySettings = createServerFn({ method: "POST" })
       agent: data.agent,
       agentModel,
       focus,
+      skills: Array.isArray(data.skills)
+        ? [...new Set(data.skills.map((s) => String(s)))].filter((s) =>
+            /^[\w:-]{1,100}$/.test(s),
+          )
+        : [],
       instructions,
       failOn: data.failOn,
     };
@@ -305,6 +313,8 @@ export const updateRepositorySettings = createServerFn({ method: "POST" })
     await requireRepo(userId, data.id);
     const db = getDb();
     const { id, ...settings } = data;
+    // Only built-ins and the caller's own skills.
+    settings.skills = await validateSkillSelection(userId, settings.skills);
     const [updated] = await db
       .update(schema.repository)
       .set(settings)

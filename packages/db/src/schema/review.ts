@@ -84,6 +84,8 @@ export const run = sqliteTable(
     instructions: text("instructions"),
     focus: text("focus", { mode: "json" }).$type<ReviewFocus[]>().default([]).notNull(),
     ignorePaths: text("ignore_paths", { mode: "json" }).$type<string[]>().default([]).notNull(),
+    /** Review skill ids (see `repository.skills`). */
+    skills: text("skills", { mode: "json" }).$type<string[]>().default([]).notNull(),
     /** Agent's overall summary + risk rating (markdown). */
     aiSummary: text("ai_summary"),
     aiRisk: text("ai_risk"),

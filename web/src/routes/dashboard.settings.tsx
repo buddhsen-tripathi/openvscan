@@ -2,6 +2,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import Link from "@/components/AppLink";
 import { AgentCredentials } from "@/components/dashboard/AgentCredentials";
+import { ReviewSkills } from "@/components/dashboard/ReviewSkills";
 import { timeAgo } from "@/components/dashboard/RunList";
 import {
   Avatar,
@@ -48,7 +49,7 @@ function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        description="Your coding agents, GitHub connection and account."
+        description="Your coding agents, review skills, GitHub connection and account."
       />
 
       <SettingsSection
@@ -57,6 +58,14 @@ function SettingsPage() {
         description="Bring your own coding agent. OpenVScan runs it headless on each pull request to triage scanner findings and review the diff."
       >
         <AgentCredentials />
+      </SettingsSection>
+
+      <SettingsSection
+        id="skills"
+        title="Review skills"
+        description="Markdown instructions the AI reviewer applies: your team's conventions, a framework checklist, or a skill from GitHub or skills.sh. Pick them per repository."
+      >
+        <ReviewSkills />
       </SettingsSection>
 
       <SettingsSection
