@@ -19,7 +19,7 @@ import {
   createAndStartRun,
   requestCancel,
 } from "@/lib/runs";
-import { describeSkills } from "@/lib/skills-server";
+import { describeSkills } from "@/lib/skills";
 import { requireUserId } from "@/lib/user";
 import { getEnv } from "@/src/lib/env";
 

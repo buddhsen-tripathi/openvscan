@@ -1,13 +1,13 @@
 import {
   AGENT_PROVIDERS,
   type AgentProvider,
+  DEFAULT_SCANNERS,
   FAIL_THRESHOLDS,
   type FailThreshold,
   REVIEW_FOCUS,
   REVIEW_TRIGGERS,
   type ReviewFocus,
   type ReviewTrigger,
-  DEFAULT_SCANNERS,
   SCANNERS,
   type Scanner,
 } from "@openvscan/core";
@@ -29,7 +29,7 @@ import {
 } from "@/lib/github";
 import { isGithubLinkConfigured, linkedGithub } from "@/lib/github-account";
 import { createAndStartRun, releaseRepositories } from "@/lib/runs";
-import { validateSkillSelection } from "@/lib/skills-server";
+import { validateSkillSelection } from "@/lib/skills";
 import { requireUserId } from "@/lib/user";
 import { getEnv } from "@/src/lib/env";
 
