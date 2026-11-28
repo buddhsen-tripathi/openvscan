@@ -23,7 +23,7 @@ It is self-hostable and also offered as a hosted cloud, like PostHog. Scope is
 |------|------|----------------|
 | Web Worker `openvscan-web` | `web/` | TanStack Start UI, sign-in pages over the WorkOS API (plain fetch, no SDK), server functions, GitHub account linking, GitHub webhook + install callback, encrypted credential storage, remote MCP server (`/mcp`). Inserts `run` rows and calls the engine. |
 | Engine Worker `openvscan-engine` | `engine/` | `EngineApi` RPC entrypoint, `ReviewWorkflow` (Cloudflare Workflow), `ScanSandbox` (Durable Object + Container), `Outbound` (egress policy proxy). Owns every write to a run after creation. |
-| `@openvscan/core` | `packages/core` | Enums (statuses, phases, severities, scanners, credential kinds), review policy (`policy.ts`: triggers, models, focus presets, path globs, PR commands), severity helpers, agent review zod schema, AES-GCM `sealSecret`/`openSecret`, Codex `auth.json` parsing (`codex.ts`), `EngineRpc` interface. |
+| `@openvscan/core` | `packages/core` | Enums (statuses, phases, severities, scanners, credential kinds), review policy (`policy.ts`: triggers, models, focus presets, path globs, PR commands), severity helpers, agent review zod schema, AES-GCM `sealSecret`/`openSecret`, Codex `auth.json` parsing (`codex.ts`), review skills (`skills.ts` normalisation/frontmatter/URL rules, `skill-import.ts`, `builtin-skills.ts`), `EngineRpc` interface. |
 | `@openvscan/db` | `packages/db` | Drizzle `sqlite-core` schema + D1 migrations (shared by both Workers). |
 | `@openvscan/github` | `packages/github` | Octokit App auth, webhook verify, scoped read-only tokens, check runs, reviews, summary comment upsert. Only this package imports octokit. |
 
@@ -40,8 +40,8 @@ engine ReviewWorkflow (id = runId), each step durable + retried:
   load → github:check-run → github:diff (PR files → R2 diff.json / pr.diff)
   → sandbox:checkout (git fetch head sha, egress = checkout)
   → scan:<trivy|opengrep|gitleaks> (egress = scan; raw → R2; parsed → finding)
-  → ai:start (decrypt credential, write PROMPT.md + findings, egress = agent,
-              start agent as a detached task)
+  → ai:start (decrypt credential, write PROMPT.md + findings + review
+              skills, egress = agent, start agent as a detached task)
   → ai:wait:i / ai:poll:i (sleep 30s, poll, honour cancel)  ×≤50
   → ai:collect (lock egress, validate review.json, apply triage, add AI findings)
     (an AI error → ai:failed: lock egress, record ai_error, keep going)
@@ -172,14 +172,22 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
 - `github.ts`:
   - `github_installation`
   - `repository`: per-repo policy (`review_trigger`, `skip_drafts`,
-    `base_branches`, `ignore_paths`, `focus`, `scanners`,
-    `agent`, `agent_model`, `instructions`, `fail_on`)
+    `base_branches`, `ignore_paths`, `focus`, `skills`, `scanners`,
+    `agent`, `agent_model`, `instructions`, `fail_on`). `skills` is a JSON
+    array of skill ids in selection order: the owner's `review_skill` ids
+    or `builtin:<slug>`.
   - `agent_credential`: one per (user, provider). Holds the ciphertext and IV;
     the row id is used as AAD.
+- `skills.ts`:
+  - `review_skill`: one user's skill (`name` unique per user,
+    `description`, `body` without frontmatter, `source` paste/upload/url,
+    `source_url`, `sha256` of the body). A normalised snapshot: imports are
+    never re-fetched. Deleting one removes its id from the user's
+    repositories (`deleteSkill`).
 - `review.ts`:
   - `pull_request`: `paused` is set by the `pause` comment command
-  - `run`: status, phase, conclusion, a policy snapshot, AI summary and risk,
-    counts, and GitHub ids
+  - `run`: status, phase, conclusion, a policy snapshot (including
+    `skills`), AI summary and risk, counts, and GitHub ids
   - `finding`: `source` is a scanner or `ai`. Also `in_diff`, `fingerprint`,
     `ai_verdict` and `ai_reasoning`.
   - `run_log`
@@ -222,6 +230,20 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
 - The agent runs with cwd `/workspace/.openvscan`, outside the checkout at
   `/workspace/repo`, so the PR's `CLAUDE.md`, `AGENTS.md`, `.claude/` hooks
   and `.mcp.json` are never loaded.
+- Review skills (`web/content/docs/review-skills.mdx`): at `ai:start`
+  `loadRunSkills` (workflow.ts) loads the run's `skills` snapshot, built-ins
+  from core and user skills by id AND repository owner, keeps them within
+  `SKILL_LIMITS.runBudget` (120 KB, selection order) and logs loaded,
+  skipped and missing ones. `planSkillFiles` (agent.ts) writes
+  `/workspace/.openvscan/skills/<slug>/SKILL.md`, plus
+  `.claude/skills/<slug>/SKILL.md` for Claude Code's native loading, and
+  PROMPT.md gets a "Review skills (trusted, from the repository owner)"
+  section. Skill text is normalised on save (`normalizeSkill`: invisible,
+  bidi and tag characters stripped, CRLF, caps). URL import
+  (`previewSkillUrl` → `importSkillFromUrl`) is server-side: https,
+  allowlisted hosts (GitHub, raw, gists, skills.sh), manual redirects to
+  allowlisted hosts only, 10s, 64 KB, text only; skills.sh pages map to the
+  repo's SKILL.md with that frontmatter name.
 - The prompt fences PR title, body and file list as untrusted. The agent's only output is
   `/workspace/.openvscan/review.json`, validated against `AgentReviewSchema`.
   Triage verdicts are accepted only for finding ids that were given to the
@@ -238,6 +260,7 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
 | `web/lib/server.ts` | overview, runs, rerun/cancel, credentials server fns |
 | `web/lib/account-server.ts` | account page: profile, GitHub link/unlink, WorkOS sessions, delete account |
 | `web/lib/github-server.ts` | connect/list/configure repositories, manual run |
+| `web/lib/skills-server.ts` | review skills: list/get/save/delete, URL preview, repository selection checks |
 | `web/src/routes/api/github/webhook.ts` | `pull_request` (per-repo `review_trigger`), `issue_comment` (`@<app> review/pause/resume/help`, write access only), `check_run` (re-run), installation events |
 | `web/src/routes/api/github/setup.ts` | install callback (`syncInstallation`: personal owner or org admin only; first owner keeps it) |
 | `engine/src/workflow.ts` | the pipeline |

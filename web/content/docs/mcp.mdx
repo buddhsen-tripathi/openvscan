@@ -66,7 +66,8 @@ Any MCP client that supports Streamable HTTP and OAuth can connect. Point it at 
 | `cancel_review` | Cancels a queued or running review. | `review_id` |
 | `set_pull_request_paused` | Pauses or resumes automatic reviews on one pull request. Pausing also cancels its running reviews. OpenVScan must already have seen the pull request. | `repository`, `pull_request`, `paused` |
 | `get_repository_settings` | A repository's review policy and its 20 most recent pull requests. | `repository` |
-| `update_repository_settings` | Changes a repository's review policy. Fields you leave out keep their current value. | `repository`, and any of `review_trigger`, `skip_drafts`, `base_branches`, `ignore_paths`, `scanners`, `agent` (`null` turns the AI reviewer off), `agent_model`, `focus`, `instructions`, `fail_on` |
+| `update_repository_settings` | Changes a repository's review policy. Fields you leave out keep their current value. | `repository`, and any of `review_trigger`, `skip_drafts`, `base_branches`, `ignore_paths`, `scanners`, `agent` (`null` turns the AI reviewer off), `agent_model`, `focus`, `skills` (ids from `list_skills`; replaces the list), `instructions`, `fail_on` |
+| `list_skills` | The built-in [review skills](/docs/review-skills) and the ones you added, with their ids. | None |
 
 `repository` accepts the repository's OpenVScan id or its `owner/name`. The settings use the same values and rules as the dashboard. See [Repository settings](/docs/repository-settings).
 
