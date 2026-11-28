@@ -44,6 +44,12 @@ export interface ScannerSpec {
 
 export const REPO_DIR = "/workspace/repo";
 export const OUT_DIR = "/workspace/out";
+/**
+ * Written by checkout for a pull request: `<head> --not <base parents>`, the
+ * git log range of the PR's own commits. Absent for branch runs, Daytona
+ * tarball checkouts, or when only the head commit could be fetched.
+ */
+export const HISTORY_RANGE = "/workspace/.pr-history";
 
 /** Strip the checkout prefix so paths are repo-relative. */
 export function relPath(p: unknown): string | null {

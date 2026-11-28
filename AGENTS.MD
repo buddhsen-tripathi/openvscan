@@ -38,7 +38,9 @@ pull_request webhook ─► web: upsert pull_request, dedupe by head sha,
                         ENGINE.startRun(runId)
 engine ReviewWorkflow (id = runId), each step durable + retried:
   load → github:check-run → github:diff (PR files → R2 diff.json / pr.diff)
-  → sandbox:checkout (git fetch head sha, egress = checkout)
+  → sandbox:checkout (git fetch head sha; a PR also fetches its own commits,
+    --shallow-exclude=base then --deepen=1, and writes HISTORY_RANGE for
+    Gitleaks; falls back to depth 1; egress = checkout)
   → scan:plan (PR: skip scanners whose SCANNER_INFO triggers match no changed file)
   → scan:<opengrep|osv|gitleaks|trivy|zizmor> (egress = spec.egress; raw → R2;
     parsed → finding)

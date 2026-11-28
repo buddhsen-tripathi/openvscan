@@ -9,7 +9,7 @@ Every review runs the scanners you enable for the repository against the checked
 |---------|-------|----------------------------------------|
 | [OpenGrep](#opengrep) | Injection, XSS, SSRF, path traversal, unsafe deserialization and other code flaws | Always |
 | [OSV-Scanner](#osv-scanner) | Known-vulnerable and known-malicious dependencies | A lockfile |
-| [Gitleaks](#gitleaks) | Hard-coded API keys, tokens and private keys | Always |
+| [Gitleaks](#gitleaks) | Hard-coded API keys, tokens and private keys, in every commit of the pull request | Always |
 | [Trivy](#trivy) | Misconfigured Dockerfiles, Kubernetes, Helm, Terraform, CloudFormation and Azure ARM | A Dockerfile, Terraform, YAML or JSON file |
 | [zizmor](#zizmor) | Exploitable GitHub Actions workflows | `.github/workflows/`, `.github/actions/`, `action.yml` or `dependabot.yml` |
 
@@ -112,18 +112,23 @@ A package version in the OpenSSF malicious packages dataset (ids starting `MAL-`
 
 ## Gitleaks
 
-Gitleaks finds hard-coded secrets such as API keys, tokens and private keys.
+Gitleaks finds hard-coded secrets such as API keys, tokens and private keys. On a pull request it runs twice:
+
+- over the lines each of the pull request's commits added (`gitleaks git`), so a key added in one commit and deleted in the next is still caught. Deleting it doesn't help: it stays in the branch's history on GitHub, and anyone who can read the repository can fetch it;
+- over the files at the head commit (`gitleaks dir`), which also reports secrets that predate the pull request.
 
 ```bash
+gitleaks git /workspace/repo --log-opts="<head> --not <base commits>" ...
 gitleaks dir /workspace/repo --config /opt/gitleaks.toml \
   --gitleaks-ignore-path /opt/openvscan --ignore-gitleaks-allow \
-  --report-format json --report-path /workspace/out/gitleaks.json \
-  --redact --no-banner --exit-code 0 --log-level warn
+  --report-format json --redact --no-banner --exit-code 0 --log-level warn
 ```
 
-It runs with the default rules of the pinned release and scans the files in the checked-out tree. Because checkout fetches a single commit, git history is not scanned.
+To get that history, checkout fetches the pull request's commits, stopping at the base branch, instead of only the head commit. If that fails, for example because the base branch was deleted, it falls back to the head commit and Gitleaks scans the files only. Branch reviews and Daytona checkouts (a tarball, with no git history) scan the files only.
 
-`--redact` keeps the secret value out of Gitleaks' output, so OpenVScan never sees or stores it. Every leak is reported as `high` severity with CWE-798, and the remediation tells you to revoke and rotate the credential, remove it from the code, and load it from a secret manager or environment variable. The AI can't dismiss a secret.
+A secret still in the head commit is reported on its file and line, and is in the diff when that line is. A secret a later commit removed is reported on its file with no line, notes the commit that added it, and always counts as part of the change. Only the commit id is kept; Gitleaks' author name, email and commit message are dropped.
+
+Both runs use the default rules of the pinned release. A `.gitleaks.toml`, `.gitleaksignore` or `gitleaks:allow` comment in the pull request has no effect. `--redact` keeps the secret value out of Gitleaks' output, so OpenVScan never sees or stores it. Every leak is reported as `high` severity with CWE-798, and the remediation tells you to revoke and rotate the credential, remove it from the code, and load it from a secret manager or environment variable. The AI can't dismiss a secret.
 
 ## Trivy
 

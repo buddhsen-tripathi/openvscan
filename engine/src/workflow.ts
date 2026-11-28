@@ -90,6 +90,7 @@ import {
   OUT_DIR,
   REPO_DIR,
   relPath,
+  HISTORY_RANGE,
   SCANNER_SPECS,
   skipReason,
 } from "./scanners";
@@ -386,6 +387,11 @@ async function loadDiffMap(env: Env, runId: string): Promise<DiffMap | null> {
  * read-only token scoped to this one repository. Daytona: a codeload
  * tarball URL that expires within minutes, so no token enters the sandbox.
  */
+/** A branch name git accepts on the command line as a ref, without surprises. */
+function isSafeRef(ref: string): boolean {
+  return /^[\w./-]{1,200}$/.test(ref) && !ref.startsWith("-") && !ref.includes("..");
+}
+
 async function checkout(env: Env, sb: Box, c: RunContext): Promise<void> {
   await sb.start();
   const creds = { ...appCreds(env), installationId: c.installationId };
@@ -407,10 +413,18 @@ async function checkout(env: Env, sb: Box, c: RunContext): Promise<void> {
         "sh",
         "-c",
         `set -e
-rm -rf "$1" && git init -q "$1" && cd "$1"
+rm -rf "$1" "$7" && git init -q "$1" && cd "$1"
 git remote add origin "$2"
-git fetch -q --no-tags --depth=1 origin "$3"
-git -c advice.detachedHead=false checkout -q FETCH_HEAD
+# A pull request: its own commits, plus their parents on the base branch,
+# so Gitleaks can scan each commit's diff (HISTORY_RANGE). Anything else,
+# or if that fails (base branch gone, odd history): the head commit only.
+if [ -n "$6" ] && git fetch -q --no-tags --shallow-exclude="refs/heads/$6" origin "$3" 2>/dev/null \
+  && git fetch -q --no-tags --deepen=1 origin "$3" 2>/dev/null; then
+  echo "$3 --not $(paste -sd ' ' .git/shallow)" >"$7"
+else
+  git fetch -q --no-tags --depth=1 origin "$3"
+fi
+git -c advice.detachedHead=false checkout -q "$3"
 mkdir -p "$4"
 echo "$3" >"$5"`,
         "checkout",
@@ -419,6 +433,8 @@ echo "$3" >"$5"`,
         c.headSha,
         OUT_DIR,
         CHECKOUT_MARKER,
+        c.isPr && c.baseRef && isSafeRef(c.baseRef) ? c.baseRef : "",
+        HISTORY_RANGE,
       ],
       { timeoutSec: 600 },
     );
@@ -542,7 +558,11 @@ async function toRow(
     startLine: f.startLine,
     endLine: f.endLine,
     inDiff:
-      f.metadata?.kind === "dependency"
+      // A secret this PR added in one commit and removed in another: still in
+      // the branch's history, so it counts as part of the change.
+      f.metadata?.kind === "secret" && f.metadata.commit && f.startLine == null
+        ? true
+        : f.metadata?.kind === "dependency"
         ? isDependencyInDiff(
             diff,
             f.filePath,

@@ -145,6 +145,39 @@ describe("parseGitleaks", () => {
   it("handles an empty report", () => {
     expect(parseGitleaks("[]")).toEqual([]);
     expect(parseGitleaks("null")).toEqual([]);
+    expect(parseGitleaks('{"history":[],"tree":[]}')).toEqual([]);
+  });
+
+  it("reports secrets from the PR's commits, including ones removed later", () => {
+    const leak = (rule: string, file: string, line: number, commit?: string) => ({
+      RuleID: rule,
+      Description: rule,
+      File: commit ? file : `/workspace/repo/${file}`,
+      StartLine: line,
+      EndLine: line,
+      ...(commit ? { Commit: commit, Author: "someone", Email: "a@b.c", Message: "msg" } : {}),
+    });
+    const findings = parseGitleaks(
+      JSON.stringify({
+        // git log order: newest first.
+        history: [
+          leak("stripe-access-token", "app/config.js", 3, "bbbbbbbbbbbbbbbbbbbb"),
+          leak("aws-access-token", "app/old.js", 7, "aaaaaaaaaaaaaaaaaaaa"),
+          leak("stripe-access-token", "app/config.js", 1, "aaaaaaaaaaaaaaaaaaaa"),
+        ],
+        tree: [leak("stripe-access-token", "app/config.js", 3), leak("github-pat", "lib/x.ts", 2)],
+      }),
+    );
+    expect(findings.map((f) => [f.ruleId, f.filePath, f.startLine, f.metadata.commit ?? null])).toEqual([
+      // In the head commit, first added by the oldest commit that has it.
+      ["stripe-access-token", "app/config.js", 3, "aaaaaaaaaaaa"],
+      // Pre-existing: not in the PR's history.
+      ["github-pat", "lib/x.ts", 2, null],
+      // Added, then deleted: no line (it's an old version of the file).
+      ["aws-access-token", "app/old.js", null, "aaaaaaaaaaaa"],
+    ]);
+    expect(findings[2].description).toMatch(/removed by a later one/);
+    expect(JSON.stringify(findings)).not.toMatch(/someone|a@b\.c|msg/);
   });
 });
 

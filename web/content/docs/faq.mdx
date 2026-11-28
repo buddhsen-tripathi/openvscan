@@ -53,7 +53,7 @@ Inline comments go only on findings that are in the diff, not dismissed by the a
 
 ## Does it scan git history?
 
-No. Checkout fetches only the head commit, so Gitleaks and the other scanners see the current files. A secret removed in an earlier commit is not reported.
+A pull request's own history, yes. Checkout fetches the pull request's commits, and Gitleaks scans what each one added, so a secret added in one commit and deleted in the next is still reported: it stays in the branch's history on GitHub. The other scanners look at the head commit's files. History from before the pull request isn't scanned, and neither is anything on Daytona, whose checkout has no git history.
 
 ## Can it push fixes to my branch?
 
