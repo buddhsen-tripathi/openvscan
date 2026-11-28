@@ -1,5 +1,5 @@
 import { type AgentProvider, CREDENTIAL_INFO, type CredentialKind, parseCodexAuthFile, SCANNERS } from "@openvscan/core";
-import { agentFailure, agentInvocation, CODEX_HOME, PROMPT_PATH, REVIEW_PATH, TASK_DIR, WORK_DIR } from "./agent";
+import { agentFailure, agentInvocation, CODEX_HOME, CURSOR_CLI_CONFIG, CURSOR_CONFIG_PATH, PROMPT_PATH, REVIEW_PATH, TASK_DIR, WORK_DIR } from "./agent";
 import { sandboxAuthFile } from "./codex";
 import { cursorAccessToken, sandboxCursorToken } from "./cursor";
 import { daytonaSettings, DaytonaBox } from "./daytona";
@@ -67,6 +67,7 @@ export async function devRoute(request: Request, env: Env): Promise<Response> {
     await sb.writeText(PROMPT_PATH, `Write the JSON {"summary":"smoke test","risk":"none"} to ${REVIEW_PATH}.`);
     const inv = agentInvocation(provider, kind, body.model ?? null);
     if (provider === "codex") await sb.exec(["mkdir", "-p", CODEX_HOME]);
+    if (provider === "cursor") await sb.writeText(CURSOR_CONFIG_PATH, CURSOR_CLI_CONFIG);
     if (kind === "codex_chatgpt_login") {
       // `secret` is a pasted auth.json; no refresh here, so use a fresh login.
       const login = parseCodexAuthFile(body.secret ?? "");

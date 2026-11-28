@@ -32,6 +32,8 @@ import {
   agentInvocation,
   buildPrompt,
   CODEX_HOME,
+  CURSOR_CLI_CONFIG,
+  CURSOR_CONFIG_PATH,
   filterAgentFindings,
   DIFF_PATH,
   FINDINGS_PATH,
@@ -664,6 +666,7 @@ async function startAgent(
   // Codex refuses to start when CODEX_HOME is missing; only a ChatGPT login
   // writes a file there, so create it for the key and access-token kinds too.
   if (provider === "codex") await sb.exec(["mkdir", "-p", CODEX_HOME]);
+  if (provider === "cursor") await sb.writeText(CURSOR_CONFIG_PATH, CURSOR_CLI_CONFIG);
   // From here until ai:collect the sandbox can reach ONLY the model API, and
   // the proxy (not the sandbox) holds the credential.
   await sb.setEgress(egress);
