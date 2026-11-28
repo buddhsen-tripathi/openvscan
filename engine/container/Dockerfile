@@ -25,11 +25,13 @@ ARG OPENGREP_SHA256_AMD64=d6a68a84c01a3d8ee933f60847decf1b4d0fd7791a26833b32b959
 ARG OPENGREP_SHA256_ARM64=3abfc87d66f208efd143a1b408d489af934cea7d9968ab1f37dca001f9886092
 # Rule packs, each pinned to a commit. Licences: opengrep-rules LGPL-2.1 with
 # the Commons Clause; GitLab sast-rules MIT, its rules/lgpl LGPL-3.0; Trail of
-# Bits AGPL-3.0; 0xdea MIT. Each pack's licence is copied next to its rules.
+# Bits AGPL-3.0; 0xdea MIT; mobsfscan LGPL-3.0. Each pack's licence is copied
+# to /opt/opengrep-rules/LICENSES/<pack>.
 ARG OPENGREP_RULES_COMMIT=f1d2b562b414783763fd02a6ed2736eaed622efa
 ARG GITLAB_RULES_COMMIT=83144bd2ec7d3200cda96347fa923f81c8ad8413
 ARG TRAILOFBITS_RULES_COMMIT=31390b3a99c04c81522d1b37c8d1900aa2dd4094
 ARG OXDEA_RULES_COMMIT=0c6df4b12563b7834ccaf0bf1bbb91809f376429
+ARG MOBSFSCAN_RULES_COMMIT=e48f780d04c4fdd38ec07c1de3d2210513f48ecd
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
@@ -49,18 +51,19 @@ RUN set -e; \
   fetch gitlab https://gitlab.com/gitlab-org/security-products/sast-rules.git "$GITLAB_RULES_COMMIT"; \
   fetch trailofbits https://github.com/trailofbits/semgrep-rules "$TRAILOFBITS_RULES_COMMIT"; \
   fetch 0xdea https://github.com/0xdea/semgrep-rules "$OXDEA_RULES_COMMIT"; \
+  fetch mobsfscan https://github.com/MobSF/mobsfscan "$MOBSFSCAN_RULES_COMMIT"; \
   cd /packs; \
   python3 -I /build/curate.py /opt/opengrep-rules \
     opengrep=opengrep:apex,bash,c,clojure,csharp,elixir,go,java,javascript,kotlin,ocaml,php,python,ruby,rust,scala,solidity,swift,typescript,html \
     gitlab=gitlab:c,csharp,go,java,javascript,python,scala,rules/lgpl \
     trailofbits=trailofbits:go,javascript,jvm,python,rs,ruby,swift \
-    0xdea=0xdea/rules; \
-  for p in opengrep gitlab trailofbits 0xdea; do \
-    for f in LICENSE LICENSE.md LICENSE.txt; do \
-      [ -f "/packs/$p/$f" ] && cp "/packs/$p/$f" "/opt/opengrep-rules/$p/$f"; \
-    done; \
+    0xdea=0xdea/rules \
+    mobsfscan=mobsfscan/mobsfscan/rules/semgrep:java,kotlin,swift; \
+  for p in opengrep gitlab trailofbits 0xdea mobsfscan; do \
+    mkdir -p "/opt/opengrep-rules/LICENSES/$p"; \
+    for f in "/packs/$p"/LICENSE* "/packs/$p"/COPYING*; do [ -f "$f" ] && cp "$f" "/opt/opengrep-rules/LICENSES/$p/"; done; \
   done; \
-  for f in /packs/gitlab/rules/lgpl/LICENSE*; do [ -f "$f" ] && cp "$f" /opt/opengrep-rules/gitlab/rules/lgpl/; done; \
+  for f in /packs/gitlab/rules/lgpl/LICENSE*; do [ -f "$f" ] && cp "$f" /opt/opengrep-rules/LICENSES/gitlab/rules-lgpl-LICENSE; done; \
   sh /build/prune.sh /opt/opengrep-rules
 
 # ---------------------------------------------------------------------------
@@ -79,6 +82,9 @@ ARG OSV_SCANNER_SHA256_ARM64=983d22fbad9724514e3fcc6acc83b5fa64c5ffa6b0d9f510028
 ARG ZIZMOR_VERSION=1.33.1
 ARG ZIZMOR_SHA256_AMD64=3e6a301c7a820a2501915f5a9de8c0486da82bdec7965f068477538a98743d43
 ARG ZIZMOR_SHA256_ARM64=aa487c792a7cbbe86e4f8dccd3b66de33b3b51813c090aaa0842d7ea08a3fc35
+ARG POUTINE_VERSION=1.1.6
+ARG POUTINE_SHA256_AMD64=abde716599a65608b023a69ed9316e5f083a7bca48612151c2720835883757ea
+ARG POUTINE_SHA256_ARM64=460c90300c6329106b551c150682d12e457365f6436a6cbbd08fe79eb9a98131
 ARG CLAUDE_CODE_VERSION=2.1.332
 ARG CODEX_VERSION=0.172.0
 ARG CURSOR_AGENT_VERSION=2026.11.22-e9042b2
@@ -97,19 +103,32 @@ RUN set -e; cd /tmp; \
     get "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_arm64.tar.gz" gitleaks.tgz "$GITLEAKS_SHA256_ARM64"; \
     get "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_arm64" osv-scanner "$OSV_SCANNER_SHA256_ARM64"; \
     get "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-aarch64-unknown-linux-gnu.tar.gz" zizmor.tgz "$ZIZMOR_SHA256_ARM64"; \
+    get "https://github.com/boostsecurityio/poutine/releases/download/v${POUTINE_VERSION}/poutine_Linux_arm64.tar.gz" poutine.tgz "$POUTINE_SHA256_ARM64"; \
   else \
     get "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy.tgz "$TRIVY_SHA256_AMD64"; \
     get "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks.tgz "$GITLEAKS_SHA256_AMD64"; \
     get "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" osv-scanner "$OSV_SCANNER_SHA256_AMD64"; \
     get "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz" zizmor.tgz "$ZIZMOR_SHA256_AMD64"; \
+    get "https://github.com/boostsecurityio/poutine/releases/download/v${POUTINE_VERSION}/poutine_Linux_x86_64.tar.gz" poutine.tgz "$POUTINE_SHA256_AMD64"; \
   fi; \
   tar -xzf trivy.tgz -C /usr/local/bin trivy; \
   tar -xzf gitleaks.tgz -C /usr/local/bin gitleaks; \
   tar -xzf zizmor.tgz -C /usr/local/bin zizmor; \
+  tar -xzf poutine.tgz -C /usr/local/bin poutine; \
   install -m 755 osv-scanner /usr/local/bin/osv-scanner; \
-  rm -f trivy.tgz gitleaks.tgz zizmor.tgz osv-scanner; \
+  rm -f trivy.tgz gitleaks.tgz zizmor.tgz poutine.tgz osv-scanner; \
   curl -sSfL -o /opt/gitleaks.toml \
     "https://raw.githubusercontent.com/gitleaks/gitleaks/v${GITLEAKS_VERSION}/config/gitleaks.toml"
+
+# Spectral with the OWASP API Security ruleset, for OpenAPI specs: every
+# package pinned by spectral/package-lock.json, no install scripts. Loaded
+# from a JS ruleset so nothing is fetched at run time.
+COPY spectral/package.json spectral/package-lock.json /opt/spectral/
+RUN cd /opt/spectral \
+  && npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+  && printf 'import owasp from "@stoplight/spectral-owasp-ruleset";\nexport default { extends: [owasp] };\n' >ruleset.mjs \
+  && ln -s /opt/spectral/node_modules/.bin/spectral /usr/local/bin/spectral \
+  && npm cache clean --force
 
 COPY --from=rules /usr/local/bin/opengrep /usr/local/bin/opengrep
 COPY --from=rules /opt/opengrep-rules /opt/opengrep-rules
@@ -133,7 +152,9 @@ COPY --from=sandbox /usr/local/bin/sandbox-shim /usr/local/bin/sandbox-shim
 
 COPY scripts/ /opt/openvscan/
 # osv-scanner.toml is empty on purpose: the PR's own config can't ignore advisories.
-RUN chmod +x /opt/openvscan/*.sh && touch /opt/openvscan/osv-scanner.toml
+# osv-scanner.toml and poutine.yml are empty on purpose: the PR's own
+# configs can't ignore findings.
+RUN chmod +x /opt/openvscan/*.sh && touch /opt/openvscan/osv-scanner.toml /opt/openvscan/poutine.yml
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

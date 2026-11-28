@@ -42,7 +42,8 @@ engine ReviewWorkflow (id = runId), each step durable + retried:
     --shallow-exclude=base then --deepen=1, and writes HISTORY_RANGE for
     Gitleaks; falls back to depth 1; egress = checkout)
   → scan:plan (PR: skip scanners whose SCANNER_INFO triggers match no changed file)
-  → scan:<opengrep|osv|gitleaks|trivy|zizmor> (egress = spec.egress; raw → R2;
+  → scan:<opengrep|osv|gitleaks|trivy|zizmor|poutine|spectral>
+    (egress = spec.egress; raw → R2;
     parsed → finding)
   → ai:start (decrypt credential, write PROMPT.md + findings + review
               skills, egress = agent, start agent as a detached task)

@@ -73,6 +73,7 @@ export function parseZizmor(raw: string): NormalizedFinding[] {
 
 export const zizmor: ScannerSpec = {
   // zizmor exits 3 when there's nothing to audit, so check first.
+  // --collect=all: the default skips files in .gitignore, which the PR controls.
   argv: [
     "sh",
     "-c",
@@ -80,7 +81,7 @@ export const zizmor: ScannerSpec = {
 if [ -z "$(find . -path ./node_modules -prune -o \\( -path './.github/*' -o -name action.yml -o -name action.yaml \\) -print | head -n 1)" ]; then
   echo '[]' >"$2"; exit 0
 fi
-exec zizmor --offline --no-config --no-ignores --persona regular --format json-v1 --no-exit-codes . >"$2"`,
+exec zizmor --offline --no-config --no-ignores --collect=all --persona regular --format json-v1 --no-exit-codes . >"$2"`,
     "zizmor",
     REPO_DIR,
     `${OUT_DIR}/zizmor.json`,

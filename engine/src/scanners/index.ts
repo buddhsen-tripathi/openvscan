@@ -2,6 +2,8 @@ import { matchesPath, SCANNER_INFO, type Scanner, severityRank } from "@openvsca
 import { gitleaks } from "./gitleaks";
 import { opengrep } from "./opengrep";
 import { osv } from "./osv";
+import { poutine } from "./poutine";
+import { spectral } from "./spectral";
 import { trivy } from "./trivy";
 import type { NormalizedFinding, ScannerSpec } from "./types";
 import { zizmor } from "./zizmor";
@@ -9,6 +11,8 @@ import { zizmor } from "./zizmor";
 export { parseGitleaks } from "./gitleaks";
 export { parseOpengrep } from "./opengrep";
 export { parseOsv } from "./osv";
+export { parsePoutine } from "./poutine";
+export { parseSpectral } from "./spectral";
 export { parseTrivy } from "./trivy";
 export * from "./types";
 export { parseZizmor } from "./zizmor";
@@ -19,7 +23,15 @@ export { parseZizmor } from "./zizmor";
  * @openvscan/core), the binary in container/Dockerfile, and an egress rule
  * if it needs the network.
  */
-export const SCANNER_SPECS: Record<Scanner, ScannerSpec> = { opengrep, osv, gitleaks, trivy, zizmor };
+export const SCANNER_SPECS: Record<Scanner, ScannerSpec> = {
+  opengrep,
+  osv,
+  gitleaks,
+  trivy,
+  zizmor,
+  poutine,
+  spectral,
+};
 
 /** Hard cap per scanner so a pathological repo can't flood D1 or the PR. */
 export const MAX_FINDINGS_PER_SCANNER = 500;

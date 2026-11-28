@@ -562,7 +562,10 @@ async function toRow(
       // the branch's history, so it counts as part of the change.
       f.metadata?.kind === "secret" && f.metadata.commit && f.startLine == null
         ? true
-        : f.metadata?.kind === "dependency"
+        : f.metadata?.kind === "vendored"
+          ? // The library's directory: in the diff when the PR changed a file in it.
+            Boolean(diff && f.filePath && Object.keys(diff).some((p) => p.startsWith(`${f.filePath}/`)))
+          : f.metadata?.kind === "dependency"
         ? isDependencyInDiff(
             diff,
             f.filePath,

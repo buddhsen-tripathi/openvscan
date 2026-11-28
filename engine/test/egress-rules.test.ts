@@ -39,6 +39,8 @@ describe("scan egress", () => {
     expect(scanAllowed("POST", "api.osv.dev", "/v1/querybatch")).toBe(true);
     expect(scanAllowed("GET", "api.osv.dev", "/v1/vulns/GHSA-29mw-wpgm-hmr9")).toBe(true);
     expect(scanAllowed("GET", "api.osv.dev", "/v1/vulns/MAL-2025-1234")).toBe(true);
+    expect(scanAllowed("POST", "api.osv.dev", "/v1experimental/determineversion")).toBe(true);
+    expect(scanAllowed("POST", "api.osv.dev", "/v1experimental/other")).toBe(false);
 
     expect(scanAllowed("PUT", "api.osv.dev", "/v1/querybatch")).toBe(false);
     expect(scanAllowed("GET", "api.osv.dev", "/v1/vulns/../../x")).toBe(false);

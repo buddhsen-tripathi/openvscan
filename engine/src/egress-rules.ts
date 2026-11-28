@@ -36,7 +36,11 @@ export function openaiAllowed(method: string, path: string): boolean {
  */
 export function scanAllowed(method: string, host: string, path: string): boolean {
   if (host !== "api.osv.dev") return false;
-  if (method === "POST") return path === "/v1/querybatch" || path === "/v1/query";
+  // determineversion: hashes of the files in a vendored C/C++ library
+  // (third_party/zlib, say), to tell which release it is. No code is sent.
+  if (method === "POST") {
+    return path === "/v1/querybatch" || path === "/v1/query" || path === "/v1experimental/determineversion";
+  }
   if (method === "GET") return /^\/v1\/vulns\/[\w.:-]+$/.test(path);
   return false;
 }

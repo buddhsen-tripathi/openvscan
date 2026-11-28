@@ -39,7 +39,7 @@ export type Severity = (typeof SEVERITIES)[number];
  * Open-source scanners baked into the engine image. Each one is a separate,
  * independently-retried step in the review workflow, run in this order.
  */
-export const SCANNERS = ["opengrep", "osv", "gitleaks", "trivy", "zizmor"] as const;
+export const SCANNERS = ["opengrep", "osv", "gitleaks", "trivy", "zizmor", "poutine", "spectral"] as const;
 export type Scanner = (typeof SCANNERS)[number];
 
 /** Per-scanner outcome of one run, stored on `run.scanner_stats`. */
@@ -52,7 +52,7 @@ export interface ScannerStat {
   reason?: string;
 }
 
-export const SCANNER_CATEGORIES = ["code", "dependencies", "secrets", "infrastructure", "ci"] as const;
+export const SCANNER_CATEGORIES = ["code", "dependencies", "secrets", "infrastructure", "ci", "api"] as const;
 export type ScannerCategory = (typeof SCANNER_CATEGORIES)[number];
 
 export interface ScannerInfo {
@@ -70,13 +70,22 @@ export interface ScannerInfo {
   triggers: readonly string[] | null;
 }
 
+/** Source files OpenGrep has rules for (container/scripts/languages.sh). */
+const CODE_FILES = [
+  ...["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts", "vue", "svelte", "html", "htm"],
+  ...["py", "pyi", "go", "java", "kt", "kts", "scala", "sc"],
+  ...["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "hxx", "cs", "cshtml", "razor"],
+  ...["php", "phtml", "rb", "erb", "rake", "gemspec", "rs", "swift", "sol", "cls", "trigger"],
+  ...["ex", "exs", "sh", "bash", "clj", "cljs", "cljc", "ml", "mli"],
+].map((ext) => `*.${ext}`);
+
 export const SCANNER_INFO: Record<Scanner, ScannerInfo> = {
   opengrep: {
     label: "OpenGrep",
     category: "code",
     description: "Static analysis with taint tracking: injection, XSS, SSRF, unsafe deserialization",
-    why: "The open-source fork of Semgrep's engine, with cross-function taint analysis. Runs about 850 vetted rules from five open-source packs (OpenGrep, GitLab, Trail of Bits, 0xdea), keeping vulnerability rules and dropping audit-only and low-confidence ones.",
-    triggers: null,
+    why: "The open-source fork of Semgrep's engine, with taint analysis. Runs about 980 vetted rules from five open-source packs (OpenGrep, GitLab, Trail of Bits, 0xdea, MobSF), keeping vulnerability rules and dropping audit-only and low-confidence ones. Only the rules for languages in the repository load.",
+    triggers: CODE_FILES,
   },
   osv: {
     label: "OSV-Scanner",
@@ -144,6 +153,33 @@ export const SCANNER_INFO: Record<Scanner, ScannerInfo> = {
     description: "GitHub Actions: script injection, dangerous triggers, leaked tokens, unpinned actions",
     why: "Workflows run with the repository's secrets, and attacks like pull_request_target checkouts and ${{ }} injection are among the most exploited bugs on GitHub. zizmor runs offline with its low-noise persona.",
     triggers: [".github/workflows/", ".github/actions/", "action.yml", "action.yaml", ".github/dependabot.yml"],
+  },
+  poutine: {
+    label: "poutine",
+    category: "ci",
+    description: "GitLab CI, Azure Pipelines and Tekton: injection, untrusted checkouts, unverified scripts",
+    why: "BoostSecurity's build pipeline scanner, the open-source tool that covers CI systems besides GitHub Actions. On GitHub workflows it adds only the checks zizmor lacks (auto-merge confused deputy, self-hosted runners on pull requests, conditions that are always true).",
+    triggers: [
+      ".gitlab-ci.yml",
+      "*.gitlab-ci.yml",
+      ".gitlab/",
+      "azure-pipelines*.yml",
+      "azure-pipelines*.yaml",
+      ".azure-pipelines/",
+      ".pipelines/",
+      ".tekton/",
+      ".github/workflows/",
+      ".github/actions/",
+      "action.yml",
+      "action.yaml",
+    ],
+  },
+  spectral: {
+    label: "Spectral (OWASP API)",
+    category: "api",
+    description: "OpenAPI specs against the OWASP API Security Top 10: missing auth, credentials in URLs, plain HTTP",
+    why: "Stoplight's OpenAPI linter with the OWASP API Security ruleset, kept to its security rules (authentication, mass assignment, SSRF-prone parameters, transport). Catches an endpoint shipped without a security scheme before it's deployed.",
+    triggers: ["*.yaml", "*.yml", "*.json"],
   },
 };
 

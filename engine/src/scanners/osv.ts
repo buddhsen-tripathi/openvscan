@@ -18,7 +18,7 @@ type OsvVuln = {
 };
 type OsvGroup = { ids?: string[]; aliases?: string[]; max_severity?: string };
 type OsvPackage = {
-  package?: { name?: string; version?: string; ecosystem?: string };
+  package?: { name?: string; version?: string; ecosystem?: string; commit?: string };
   vulnerabilities?: OsvVuln[];
   groups?: OsvGroup[];
 };
@@ -70,8 +70,11 @@ export function parseOsv(raw: string): NormalizedFinding[] {
   for (const r of data.results ?? []) {
     const file = relPath(r.source?.path);
     for (const p of r.packages ?? []) {
-      const pkg = str(p.package?.name, 200) ?? "package";
-      const version = str(p.package?.version, 100) ?? "?";
+      // A vendored C/C++ library (third_party/zlib): identified by the
+      // upstream commit its files match, with no name or version.
+      const vendored = p.package?.ecosystem === "GIT";
+      const pkg = str(p.package?.name, 200) ?? (vendored ? (file?.split("/").pop() ?? "library") : "package");
+      const version = str(p.package?.version, 100) ?? (vendored ? (str(p.package?.commit, 100)?.slice(0, 12) ?? "?") : "?");
       const ecosystem = str(p.package?.ecosystem, 50);
       const vulns = p.vulnerabilities ?? [];
       const byId = new Map(vulns.filter((v) => v.id).map((v) => [v.id as string, v]));
@@ -92,7 +95,8 @@ export function parseOsv(raw: string): NormalizedFinding[] {
           ? "critical"
           : (cvssSeverity(g.max_severity) ??
             (ghsaSeverity ? normalizeSeverity(String(ghsaSeverity).replace(/^moderate$/i, "medium")) : "medium"));
-        const fixed = malicious ? null : nearestFix(members, pkg, version);
+        // Fixes for a vendored library are upstream commits, not versions.
+        const fixed = malicious || vendored ? null : nearestFix(members, pkg, version);
         const aliases = [...new Set([...ids, ...(g.aliases ?? [])])].filter((a) => a !== id).slice(0, 10);
         out.push({
           source: "osv",
@@ -111,13 +115,15 @@ export function parseOsv(raw: string): NormalizedFinding[] {
           cwe: normalizeCwe(members.flatMap((v) => v.database_specific?.cwe_ids ?? [])),
           remediation: malicious
             ? `Remove ${pkg} now, treat any machine that installed it as compromised, and rotate the credentials it could reach.`
-            : fixed
+            : vendored
+              ? `Update the vendored copy of ${pkg} in ${file ?? "the repository"} to an upstream release that includes the fix.`
+              : fixed
               ? `Upgrade ${pkg} to ${fixed} or later.`
               : `No fixed version of ${pkg} is published yet; assess exposure or replace the dependency.`,
           suggestion: null,
           fingerprintKey: `osv|${id}|${pkg}|${file ?? ""}`,
           metadata: {
-            kind: "dependency",
+            kind: vendored ? "vendored" : "dependency",
             package: pkg,
             installedVersion: version,
             fixedVersion: fixed,
@@ -144,6 +150,8 @@ export const osv: ScannerSpec = {
     "--no-resolve",
     "--no-call-analysis=all",
     "--allow-no-lockfiles",
+    // Committed files the PR lists in .gitignore are still scanned.
+    "--no-ignore",
     // An empty config: an osv-scanner.toml in the PR can't ignore advisories.
     "--config",
     "/opt/openvscan/osv-scanner.toml",

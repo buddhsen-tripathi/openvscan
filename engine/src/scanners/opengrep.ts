@@ -11,9 +11,15 @@ import {
 } from "./types";
 
 /**
- * OpenGrep (the open-source Semgrep fork) with about 850 rules curated at
- * image build time from five open-source packs: see container/rules.
+ * OpenGrep (the open-source Semgrep fork) with about 980 rules curated at
+ * image build time from five open-source packs: see container/rules. The
+ * rules are split by language, and only the languages in the checkout load.
  */
+
+/** Rule directories under /opt/opengrep-rules (rules/curate.py, LANGUAGE_DIR). */
+const LANGUAGE_DIRS =
+  "apex|bash|c|clojure|csharp|elixir|go|html|js|jvm|ocaml|other|php|python|ruby|rust|solidity|swift";
+const RULES_PREFIX = new RegExp(`^.*?opengrep-rules\\.(?:(?:${LANGUAGE_DIRS})\\.)?`);
 
 type OpengrepResult = {
   check_id?: string;
@@ -57,8 +63,8 @@ export function parseOpengrep(raw: string): NormalizedFinding[] {
     const subs = [meta.subcategory ?? []].flat().map((s) => String(s).toLowerCase());
     if (subs.includes("audit") && !subs.includes("vuln")) continue;
     if (String(meta.confidence).toUpperCase() === "LOW") continue;
-    // "<pack>.<path>.<id>", relative to the rules directory.
-    const ruleId = String(r.check_id ?? "").replace(/^.*?opengrep-rules\./, "");
+    // "<pack>.<path>.<id>", relative to the language's rules directory.
+    const ruleId = String(r.check_id ?? "").replace(RULES_PREFIX, "");
     // Some packs ship gitleaks ports; Gitleaks itself covers secrets.
     if (/(^|\.)secrets\.gitleaks\./.test(ruleId)) continue;
 
@@ -137,7 +143,6 @@ const EXCLUDE = [
   "vendor",
   "third_party",
   "dist",
-  "build",
   "test",
   "tests",
   "__tests__",
@@ -153,10 +158,20 @@ const EXCLUDE = [
 
 export const opengrep: ScannerSpec = {
   argv: [
+    "sh",
+    "-c",
+    // One --config per language present (plus "other", rules for any file).
+    `set -e
+repo="$1" out="$2"; shift 2
+cfg=""
+for d in $(/opt/openvscan/languages.sh "$repo") other; do
+  if [ -d "/opt/opengrep-rules/$d" ]; then cfg="$cfg --config /opt/opengrep-rules/$d"; fi
+done
+if [ -z "$cfg" ]; then echo '{"results":[],"errors":[]}' >"$out"; exit 0; fi
+exec opengrep scan $cfg "$@" --output "$out" "$repo"`,
     "opengrep",
-    "scan",
-    "--config",
-    "/opt/opengrep-rules",
+    REPO_DIR,
+    `${OUT_DIR}/opengrep.json`,
     // Follow untrusted data from a source to a sink within each file.
     "--taint-intrafile",
     // A pull request must not be able to silence a rule: no `nosemgrep`
@@ -165,15 +180,12 @@ export const opengrep: ScannerSpec = {
     "--x-ignore-semgrepignore-files",
     ...EXCLUDE.flatMap((p) => ["--exclude", p]),
     "--json",
-    "--output",
-    `${OUT_DIR}/opengrep.json`,
     "--disable-version-check",
     "--quiet",
     "--timeout",
     "30",
     "--max-target-bytes",
     "1000000",
-    REPO_DIR,
   ],
   outputPath: `${OUT_DIR}/opengrep.json`,
   timeoutSec: 900,

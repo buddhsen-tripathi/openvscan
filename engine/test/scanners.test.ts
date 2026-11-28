@@ -7,6 +7,8 @@ import {
   parseGitleaks,
   parseOpengrep,
   parseOsv,
+  parsePoutine,
+  parseSpectral,
   parseTrivy,
   parseZizmor,
   SCANNER_SPECS,
@@ -67,6 +69,30 @@ describe("parseOsv", () => {
     expect(aiMayDismiss({ source: "osv", ruleId: "GHSA-35jh-r3h4-6jhm" })).toBe(true);
   });
 
+  it("reports a vendored C/C++ library by its directory", () => {
+    const [f] = parseOsv(
+      JSON.stringify({
+        results: [
+          {
+            source: { path: "/workspace/repo/third_party/zlib" },
+            packages: [
+              {
+                package: { name: "", version: "", ecosystem: "GIT", commit: "cacf7f1d4e3d44d871b605da3b647f07d718623f" },
+                vulnerabilities: [{ id: "CVE-2022-37434", summary: "inflate heap overflow", affected: [] }],
+                groups: [{ ids: ["CVE-2022-37434"], max_severity: "9.8" }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(f.title).toBe("zlib@cacf7f1d4e3d: inflate heap overflow");
+    expect(f.severity).toBe("critical");
+    expect(f.metadata.kind).toBe("vendored");
+    expect(f.metadata.fixedVersion).toBeNull();
+    expect(f.remediation).toMatch(/vendored copy of zlib in third_party\/zlib/);
+  });
+
   it("handles a run with no lockfiles", () => {
     expect(parseOsv("{}")).toEqual([]);
     expect(parseOsv('{"results":[]}')).toEqual([]);
@@ -104,6 +130,10 @@ describe("scanner specs", () => {
     expect(argv("gitleaks")).toContain("--ignore-gitleaks-allow");
     expect(argv("zizmor")).toContain("--no-ignores");
     expect(argv("osv")).toContain("--config /opt/openvscan/osv-scanner.toml");
+    expect(argv("osv")).toContain("--no-ignore");
+    expect(argv("zizmor")).toContain("--collect=all");
+    expect(argv("poutine")).toContain("--config /opt/openvscan/poutine.yml");
+    expect(argv("spectral")).toContain("--ruleset /opt/spectral/ruleset.mjs");
     expect(SCANNER_SPECS.trivy.argv).toEqual(expect.arrayContaining(["--ignorefile", ""]));
   });
 
@@ -123,10 +153,16 @@ describe("skipReason", () => {
     expect(skipReason("zizmor", [".github/workflows/ci.yml"])).toBeNull();
     expect(skipReason("zizmor", ["actions/setup/action.yml"])).toBeNull();
     expect(skipReason("trivy", ["deploy/Dockerfile"])).toBeNull();
+    expect(skipReason("opengrep", ["README.md", "docs/a.png"])).toMatch(/No relevant/);
+    expect(skipReason("opengrep", ["src/routes/login.tsx"])).toBeNull();
+    expect(skipReason("opengrep", ["Sources/App/Auth.swift"])).toBeNull();
+    expect(skipReason("poutine", [".gitlab-ci.yml"])).toBeNull();
+    expect(skipReason("poutine", ["ci/azure-pipelines.prod.yml"])).toBeNull();
+    expect(skipReason("poutine", ["src/app.ts"])).toMatch(/No relevant/);
+    expect(skipReason("spectral", ["api/openapi.yaml"])).toBeNull();
   });
 
-  it("always runs code and secret scanners, and everything on branch runs", () => {
-    expect(skipReason("opengrep", ["README.md"])).toBeNull();
+  it("always runs the secret scanner, and everything on branch runs", () => {
     expect(skipReason("gitleaks", ["README.md"])).toBeNull();
     expect(skipReason("osv", null)).toBeNull();
   });
@@ -199,7 +235,7 @@ describe("parseOpengrep", () => {
 
   it("collapses several rules firing on the same line into one finding", () => {
     const hit = (id: string, severity: string, extra: Record<string, unknown> = {}) => ({
-      check_id: `opt.opengrep-rules.${id}`,
+      check_id: `opt.opengrep-rules.python.${id}`,
       path: "/workspace/repo/app/db.py",
       start: { line: 9 },
       end: { line: 9 },
@@ -223,6 +259,54 @@ describe("parseOpengrep", () => {
       "opengrep.python.flask.tainted-sql-string",
       "gitlab.python.sql.python_sql_rule-hardcoded-sql-expression",
     ]);
+  });
+});
+
+describe("parsePoutine", () => {
+  // poutine.json: .gitlab-ci.yml piping curl to bash, an Azure pipeline
+  // echoing the PR's branch name, and the pull_request_target workflow.
+  const findings = parsePoutine(fixture("poutine.json"));
+
+  it("reports non-GitHub pipelines, leaving GitHub workflows to zizmor", () => {
+    expect(findings.map((f) => [f.ruleId, f.filePath, f.startLine, f.severity])).toEqual([
+      ["unverified_script_exec", "azure-pipelines.yml", 4, "low"],
+      ["unverified_script_exec", ".gitlab-ci.yml", 5, "low"],
+      ["injection", "azure-pipelines.yml", 4, "medium"],
+    ]);
+    expect(findings[1].title).toBe("Unverified Script Execution (job build)");
+  });
+
+  it("keeps the GitHub rules zizmor has no equivalent for", () => {
+    const report = (rule_id: string) =>
+      JSON.stringify({
+        findings: [{ rule_id, meta: { path: ".github/workflows/automerge.yml", line: 3, job: "merge" } }],
+        rules: { [rule_id]: { title: rule_id, level: "error" } },
+      });
+    expect(parsePoutine(report("confused_deputy_auto_merge"))[0]?.severity).toBe("high");
+    expect(parsePoutine(report("injection"))).toEqual([]);
+    expect(parsePoutine('{"findings":null,"rules":{}}')).toEqual([]);
+  });
+});
+
+describe("parseSpectral", () => {
+  // spectral.json: a YAML spec with an unauthenticated GET and an http://
+  // server, and a JSON one with an unauthenticated DELETE on a numeric id.
+  const findings = parseSpectral(fixture("spectral.json"));
+
+  it("keeps the OWASP security rules only, with our severities", () => {
+    expect(findings.map((f) => [f.ruleId, f.filePath, f.startLine, f.severity])).toEqual([
+      ["owasp:api8:2023-no-server-http", "api/openapi.yaml", 4, "low"],
+      ["owasp:api2:2023-read-restricted", "api/openapi.yaml", 7, "low"],
+      ["owasp:api8:2023-no-server-http", "api2/spec.json", 4, "low"],
+      ["owasp:api2:2023-write-restricted", "api2/spec.json", 7, "medium"],
+      ["owasp:api1:2023-no-numeric-ids", "api2/spec.json", 8, "low"],
+    ]);
+    expect(findings.find((f) => f.ruleId === "owasp:api2:2023-write-restricted")?.cwe).toBe("CWE-306");
+  });
+
+  it("fingerprints by the spec's JSON path, not the line", () => {
+    expect(findings[1].fingerprintKey).toBe("spectral|api2:2023-read-restricted|api/openapi.yaml|paths./users/{id}.get");
+    expect(parseSpectral("[]")).toEqual([]);
   });
 });
 

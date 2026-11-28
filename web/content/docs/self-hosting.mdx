@@ -12,7 +12,7 @@ OpenVScan runs entirely on Cloudflare. A self-hosted install is two Workers, one
 | Web Worker | `openvscan-web` | Dashboard (TanStack Start), sign-in (WorkOS AuthKit), the GitHub webhook and install callback, encrypted storage of agent credentials, and the [MCP server](/docs/mcp). Creates a `run` row for each review and hands it to the engine. |
 | Engine Worker | `openvscan-engine` | Owns every review after it is created. Exposes the `EngineApi` RPC entrypoint to the web Worker. |
 | Workflow | `openvscan-review` (class `ReviewWorkflow`) | The review pipeline, inside the engine: checkout, scanners, AI review, publish. Each step is durable and retried. |
-| Durable Object + Container | `ScanSandbox` | One sandbox container per run. The image holds the scanners (OpenGrep and its curated rules, OSV-Scanner, Gitleaks, Trivy, zizmor), Claude Code, Codex and the Cursor CLI. |
+| Durable Object + Container | `ScanSandbox` | One sandbox container per run. The image holds the scanners (OpenGrep and its curated rules, OSV-Scanner, Gitleaks, Trivy, zizmor, poutine, Spectral), Claude Code, Codex and the Cursor CLI. |
 | Daytona (optional) | your Daytona account | Runs review sandboxes instead of Cloudflare Containers when you set `DAYTONA_API_KEY`. See [Run sandboxes on Daytona](/docs/daytona). |
 | Egress proxy | `Outbound` | A Worker entrypoint in the engine. The container has no direct internet access, and every HTTP(S) request it makes goes through this proxy. |
 | D1 database | `openvscan` | Users and their linked GitHub accounts, installations, repositories, pull requests, runs, findings and encrypted credentials. Shared by both Workers. |

@@ -7,11 +7,13 @@ Every review runs the scanners you enable for the repository against the checked
 
 | Scanner | Finds | Runs on a pull request when it changes |
 |---------|-------|----------------------------------------|
-| [OpenGrep](#opengrep) | Injection, XSS, SSRF, path traversal, unsafe deserialization and other code flaws | Always |
+| [OpenGrep](#opengrep) | Injection, XSS, SSRF, path traversal, unsafe deserialization and other code flaws | A source file in a language it has rules for |
 | [OSV-Scanner](#osv-scanner) | Known-vulnerable and known-malicious dependencies | A lockfile |
 | [Gitleaks](#gitleaks) | Hard-coded API keys, tokens and private keys, in every commit of the pull request | Always |
 | [Trivy](#trivy) | Misconfigured Dockerfiles, Kubernetes, Helm, Terraform, CloudFormation and Azure ARM | A Dockerfile, Terraform, YAML or JSON file |
 | [zizmor](#zizmor) | Exploitable GitHub Actions workflows | `.github/workflows/`, `.github/actions/`, `action.yml` or `dependabot.yml` |
+| [poutine](#poutine) | Exploitable GitLab CI, Azure Pipelines and Tekton pipelines | `.gitlab-ci.yml`, `azure-pipelines*.yml`, `.tekton/`, or a GitHub workflow |
+| [Spectral](#spectral) | OpenAPI specs that break the OWASP API Security Top 10 | A YAML or JSON file |
 
 A scanner whose files a pull request didn't touch is skipped, and the run page says so. Branch reviews run every enabled scanner. You choose scanners per repository under **Scanners** in the repository's **Review policy**. See [Repository settings](/docs/repository-settings).
 
@@ -26,6 +28,10 @@ Each was picked over its alternatives for a reason:
 - **Gitleaks**: the most widely used open-source secret scanner, with about 200 rules for specific providers.
 - **Trivy**, for infrastructure-as-code only: its checks cover the most formats and run offline.
 - **zizmor**: workflows run with the repository's secrets, and attacks on them, such as `pull_request_target` checkouts and `${{ }}` script injection, are among the most exploited on GitHub. zizmor is the dedicated open-source auditor for them.
+- **poutine**: the open-source scanner that covers the other CI systems (GitLab CI, Azure Pipelines, Tekton), where the same injection and untrusted-checkout bugs occur.
+- **Spectral** with the OWASP API Security ruleset: an API spec states which endpoints need authentication, so a write operation with no security scheme, or a key sent in the URL, is caught before it ships.
+
+Language-specific tools such as gosec, Bandit, FindSecBugs, Security Code Scan, njsscan and Flawfinder are already covered: the GitLab pack is a port of their rules to OpenGrep.
 
 ## Hardened against the pull request
 
@@ -34,21 +40,24 @@ The scanners read files written by the pull request's author. So none of them ho
 | Scanner | Ignored |
 |---------|---------|
 | OpenGrep | `nosemgrep` / `nosem` / `noopengrep` comments, `.semgrepignore` |
-| OSV-Scanner | `osv-scanner.toml` (an empty config is passed instead) |
+| OSV-Scanner | `osv-scanner.toml` (an empty config is passed instead), `.gitignore` |
 | Gitleaks | `.gitleaks.toml`, `.gitleaksignore`, `gitleaks:allow` comments |
 | Trivy | `trivy.yaml`, `.trivyignore` |
-| zizmor | `zizmor.yml`, `# zizmor: ignore` comments |
+| zizmor | `zizmor.yml`, `# zizmor: ignore` comments, `.gitignore` |
+| poutine | `.poutine.yml`, `.github/poutine.yml` (an empty config is passed instead) |
+| Spectral | `.spectral.yaml` and other rulesets: only the image's OWASP ruleset is loaded |
 
 None of the scanners runs the repository's code or build scripts. OSV-Scanner's call analysis, which would, is turned off.
 
-The only network access any scanner has is OSV-Scanner's queries to `api.osv.dev`: `POST /v1/querybatch` and `/v1/query` with package names, versions and ecosystems, then `GET /v1/vulns/<id>` for the advisories. No source code leaves the sandbox. Everything else is refused. See [Security model](/docs/security-model).
+The only network access any scanner has is OSV-Scanner's queries to `api.osv.dev`: `POST /v1/querybatch` and `/v1/query` with package names, versions and ecosystems, `POST /v1experimental/determineversion` with file hashes of vendored C/C++ code, then `GET /v1/vulns/<id>` for the advisories. No source code leaves the sandbox. Everything else is refused. See [Security model](/docs/security-model).
 
 ## OpenGrep
 
 OpenGrep is a Semgrep-compatible static analyzer. It follows untrusted input from where it enters a function (a request parameter, say) to where it is used dangerously (a SQL query), which is what separates a real injection from a call that merely looks risky.
 
 ```bash
-opengrep scan --config /opt/opengrep-rules --taint-intrafile \
+opengrep scan --config /opt/opengrep-rules/python --config /opt/opengrep-rules/js \
+  --taint-intrafile \
   --disable-nosem --x-ignore-semgrepignore-files \
   --exclude node_modules --exclude vendor --exclude test ... \
   --json --output /workspace/out/opengrep.json \
@@ -57,9 +66,11 @@ opengrep scan --config /opt/opengrep-rules --taint-intrafile \
   /workspace/repo
 ```
 
+The rules are stored by language (`js`, `python`, `go`, `jvm` for Java, Kotlin and Scala, `c`, `csharp`, `php`, `ruby`, `rust`, `swift`, `solidity`, `apex`, `bash`, `clojure`, `elixir`, `ocaml`, `html`). Before the scan, `languages.sh` lists the file extensions in the checkout, and only those languages' rules are loaded, which keeps a scan of a Python repository from parsing 360 Java rules.
+
 ### Rules
 
-About 850 rules, chosen when the image is built (`engine/container/rules/curate.py`) from four open-source packs pinned to a commit:
+About 980 rules, chosen when the image is built (`engine/container/rules/curate.py`) from five open-source packs pinned to a commit:
 
 | Pack | Rules kept | License |
 |------|-----------:|---------|
@@ -67,6 +78,7 @@ About 850 rules, chosen when the image is built (`engine/container/rules/curate.
 | [GitLab sast-rules](https://gitlab.com/gitlab-org/security-products/sast-rules) | ~390 | MIT; `rules/lgpl` LGPL-3.0 |
 | [Trail of Bits](https://github.com/trailofbits/semgrep-rules) | ~32 | AGPL-3.0 |
 | [0xdea](https://github.com/0xdea/semgrep-rules) (C and C++ memory safety) | ~24 | MIT |
+| [mobsfscan](https://github.com/MobSF/mobsfscan) (Android and iOS: Java, Kotlin, Swift) | ~125 | LGPL-3.0 |
 
 From each pack, the curation keeps rules that find vulnerabilities and drops:
 
@@ -77,7 +89,7 @@ From each pack, the curation keeps rules that find vulnerabilities and drops:
 
 Weak-crypto and weak-randomness rules (CWE-327, 328, 330, 331, 338, 916) are kept at `info` severity: rarely exploitable on their own, but worth knowing. A rule OpenGrep can't parse is dropped at build time, since one bad rule would abort a whole scan. The build log prints what was kept and dropped from each pack.
 
-Files under `node_modules`, `vendor`, `third_party`, `dist`, `build`, test directories and test files (`*.test.*`, `*.spec.*`, `*_test.go`, `test_*.py`) are not scanned.
+Files under `node_modules`, `vendor`, `third_party`, `dist`, test directories and test files (`*.test.*`, `*.spec.*`, `*_test.go`, `test_*.py`) are not scanned.
 
 ### Severity and grouping
 
@@ -88,7 +100,7 @@ Files under `node_modules`, `vendor`, `third_party`, `dist`, `build`, test direc
 | `WARNING` | medium |
 | `INFO` | low |
 
-Several rules often fire on the same line, for example a taint rule and a pattern rule for the same SQL injection. OpenVScan groups results by file, line and vulnerability class (SQL injection, XSS, command injection, code injection, SSRF, path traversal, or otherwise the CWE or rule id), keeps the most severe and lists the other rule ids with it. Rule ids have the form `<pack>.<path>.<rule>`.
+Several rules often fire on the same line, for example a taint rule and a pattern rule for the same SQL injection. OpenVScan groups results by file, line and vulnerability class (SQL injection, XSS, command injection, code injection, SSRF, path traversal, or otherwise the CWE or rule id), keeps the most severe and lists the other rule ids with it. Rule ids have the form `<pack>.<path>.<rule>`, without the language directory.
 
 OpenGrep spends at most 30 seconds running a rule on a single file, and skips files larger than 1,000,000 bytes.
 
@@ -98,17 +110,21 @@ OSV-Scanner reads lockfiles and checks every package version against [OSV.dev](h
 
 ```bash
 osv-scanner scan source --recursive --no-resolve --no-call-analysis=all \
-  --allow-no-lockfiles --config /opt/openvscan/osv-scanner.toml \
+  --allow-no-lockfiles --no-ignore --config /opt/openvscan/osv-scanner.toml \
   --format json --output-file /workspace/out/osv.json /workspace/repo
 ```
 
-It supports `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `deno.lock`, pinned `requirements.txt`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `go.mod`, `Cargo.lock`, `Gemfile.lock`, `composer.lock`, `pom.xml`, `gradle.lockfile`, NuGet's `packages.lock.json`, `mix.lock`, `pubspec.lock`, `renv.lock`, `Package.resolved` and `conan.lock`. `--no-resolve` keeps it to the versions written in those files, so it doesn't call deps.dev to resolve manifests.
+It supports `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `deno.lock`, pinned `requirements.txt`, `poetry.lock`, `Pipfile.lock`, `pdm.lock`, `uv.lock`, `go.mod`, `Cargo.lock`, `Gemfile.lock`, `composer.lock`, `pom.xml`, `gradle.lockfile`, NuGet's `packages.lock.json`, `mix.lock`, `pubspec.lock`, `renv.lock`, `Package.resolved` and `conan.lock`. `--no-resolve` keeps it to the versions written in those files, so it doesn't call deps.dev to resolve manifests. `--no-ignore` scans lockfiles even when the pull request lists them in `.gitignore`.
 
 OSV groups the ids of one issue (a GitHub advisory, its CVE and the ecosystem's own id), and OpenVScan reports one finding per group, against the lockfile. The rule id is the `GHSA-` id when there is one. The title has the form `package@version: summary`, and the remediation names the lowest fixed version above the installed one, for example "Upgrade lodash to 4.17.21 or later." Severity comes from the highest CVSS score in the group: 9.0 and up is critical, 7.0 high, 4.0 medium, anything lower low.
 
 ### Malicious packages
 
 A package version in the OpenSSF malicious packages dataset (ids starting `MAL-`) is reported as `Malicious package: name@version`, at critical severity, with instructions to remove it and treat machines that installed it as compromised. The AI can't dismiss it, the same as a secret: see [How the gate works](/docs/results-on-github).
+
+### Vendored C and C++ libraries
+
+C and C++ projects often copy a library's source into the repository (`third_party/zlib`). OSV-Scanner hashes those files and asks OSV.dev which upstream commit they match, then reports that version's vulnerabilities. The finding is on the library's directory, its title uses the matched commit (`zlib@cacf7f1d4e3d: ...`), and it is in the diff when the pull request changed a file in that directory.
 
 ## Gitleaks
 
@@ -147,11 +163,46 @@ It uses the checks bundled in the pinned binary, needs no database and no networ
 zizmor audits GitHub Actions workflows and composite actions, offline, with its `regular` persona (the one tuned for few false positives).
 
 ```bash
-zizmor --offline --no-config --no-ignores --persona regular \
+zizmor --offline --no-config --no-ignores --collect=all --persona regular \
   --format json-v1 --no-exit-codes .
 ```
 
-It finds template injection (`${{ github.event.pull_request.title }}` in a `run:` script), dangerous triggers such as `pull_request_target` with a checkout of the pull request, credentials persisted by `actions/checkout`, excessive `GITHUB_TOKEN` permissions, actions not pinned to a commit, and more. zizmor's severity is used as is, except that a low-confidence finding is capped at `low`.
+It finds template injection (`${{ github.event.pull_request.title }}` in a `run:` script), dangerous triggers such as `pull_request_target` with a checkout of the pull request, credentials persisted by `actions/checkout`, excessive `GITHUB_TOKEN` permissions, actions not pinned to a commit, and more. zizmor's severity is used as is, except that a low-confidence finding is capped at `low`. `--collect=all` audits workflows even when `.gitignore` lists them.
+
+## poutine
+
+poutine, from BoostSecurity, checks build pipelines: GitLab CI, Azure Pipelines, Tekton and GitHub Actions. It runs offline, from outside the checkout, with an empty config:
+
+```bash
+poutine analyze_local /workspace/repo --format json --quiet \
+  --config /opt/openvscan/poutine.yml
+```
+
+It finds expressions an outside contributor controls (a merge request title, a branch name) injected into a script, jobs that check out and run a fork's code with the pipeline's secrets, and scripts piped from `curl` into a shell. Its `error` level maps to high, `warning` to medium and `note` to low.
+
+On GitHub workflows, zizmor already covers injection, permissions and pinning, so poutine reports only the checks zizmor has no equivalent for: auto-merge confused deputies, self-hosted runners on pull requests, conditions that are always true, and untrusted checkouts followed by a build. Its list of every third-party action used is dropped as inventory, not a vulnerability.
+
+## Spectral
+
+Spectral, from Stoplight, lints OpenAPI 2 and 3 specs with the [OWASP API Security Top 10 (2023)](https://owasp.org/API-Security/editions/2023/en/0x11-t10/) ruleset. The scan finds files with an `openapi:` or `swagger:` key (at most 200) and lints those:
+
+```bash
+spectral lint <specs> --ruleset /opt/spectral/ruleset.mjs \
+  --ignore-unknown-format --format json --output /workspace/out/spectral.json --quiet
+```
+
+The ruleset is loaded from the image, so nothing is fetched at run time, and external `$ref`s don't resolve. Many of its rules are API design advice (rate-limit headers, string lengths, error schemas), so only the security ones are kept, with OpenVScan's own severity:
+
+| Rule | Severity |
+|------|----------|
+| Credentials in the URL (API2) | high |
+| Unauthenticated write operation, HTTP Basic, API key in the URL, insecure auth scheme (API2) | medium |
+| Admin endpoint with the same security scheme as others (API5) | medium |
+| Plain `http` scheme (API8) | medium |
+| Unauthenticated read operation, JWT and OAuth token guidance (API2) | low |
+| Numeric ids (API1), additional properties allowed (API3), URL parameters that may cause SSRF (API7), `http://` server URLs (API8) | low |
+
+A finding's fingerprint uses its JSON path in the spec (`paths./users/{id}.get`), so it survives edits elsewhere in the file.
 
 ## Normalized findings
 
@@ -159,7 +210,7 @@ Each scanner's JSON output is parsed into the same shape:
 
 | Field | Meaning |
 |-------|---------|
-| Source | `opengrep`, `osv`, `gitleaks`, `trivy`, `zizmor`, or `ai` for findings from the AI review |
+| Source | `opengrep`, `osv`, `gitleaks`, `trivy`, `zizmor`, `poutine`, `spectral`, or `ai` for findings from the AI review |
 | Rule id | The scanner's rule or advisory id, such as `GHSA-35jh-r3h4-6jhm` |
 | Title and description | What was found |
 | Severity | `critical`, `high`, `medium`, `low` or `info` |
@@ -181,6 +232,7 @@ For pull request reviews, each finding is marked as in the diff or not. This dec
 
 - A finding with a line number is in the diff when its line range overlaps a line the pull request added or modified.
 - A dependency finding is in the diff when the package and its installed version appear on a line the pull request added to the lockfile. A vulnerability in a dependency the pull request didn't change is pre-existing.
+- A vendored library's finding is in the diff when the pull request changed a file in the library's directory.
 - A finding with no line number is in the diff when the pull request changed its file at all. The same applies to any file GitHub shows without a patch, such as binary or very large files.
 - Findings in files the pull request deleted are never in the diff.
 

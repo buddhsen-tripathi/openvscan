@@ -82,7 +82,7 @@ Tool versions and rule packs are pinned in `engine/container/Dockerfile`, with a
 
 ### Upgrading to the scanner suite
 
-OSV-Scanner replaces Trivy for dependencies, Trivy now checks infrastructure-as-code only, and zizmor is new. Migration `0009_scanner_suite` turns on OSV-Scanner for every repository that had Trivy on, and zizmor for every repository. Turn either off under **Scanners** in a repository's settings.
+OSV-Scanner replaces Trivy for dependencies, Trivy now checks infrastructure-as-code only, and zizmor, poutine and Spectral are new. Migration `0009_scanner_suite` turns on OSV-Scanner for every repository that had Trivy on, and zizmor, poutine and Spectral for every repository. Turn any of them off under **Scanners** in a repository's settings.
 
 ### Upgrading from the old scanner version
 
@@ -211,10 +211,13 @@ The container image bundles third-party tools under their own licenses:
 | Gitleaks | MIT |
 | Trivy | Apache-2.0 |
 | zizmor | MIT |
+| poutine | Apache-2.0 |
+| Spectral and its OWASP ruleset | Apache-2.0 and MIT |
 | opengrep-rules | LGPL-2.1 with the Commons Clause |
 | GitLab sast-rules | MIT; `rules/lgpl` LGPL-3.0 |
 | Trail of Bits semgrep-rules | AGPL-3.0 |
 | 0xdea semgrep-rules | MIT |
+| mobsfscan rules | LGPL-3.0 |
 | Claude Code, Codex, Cursor CLI | Their vendors' terms |
 
 The Commons Clause restricts selling a product or service whose value derives substantially from the software. Review it before you sell a hosted service built on the bundled rules. To leave a pack out, remove it from the `curate.py` call in `engine/container/Dockerfile`. Each pack's license is copied next to its rules in the image, under `/opt/opengrep-rules`.

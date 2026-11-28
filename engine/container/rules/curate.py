@@ -3,7 +3,9 @@
 
 Runs at image build time (see engine/container/Dockerfile). Reads each pack,
 keeps the rules that find real vulnerabilities, and writes them to
-<out>/<pack>/<original path>. Everything else is dropped:
+<out>/<language>/<pack>/<original path>, so a scan can load only the
+languages a repository has (see scripts/languages.sh, whose names match
+LANGUAGE_DIR below). Everything else is dropped:
 
 - rules not in the "security" category, or tagged as "audit" without "vuln"
   (they flag a risky-looking API, not a bug), or LOW confidence;
@@ -32,6 +34,28 @@ import re
 import sys
 
 import yaml
+
+# A rule's first language → the directory it goes in. Unlisted languages go
+# to "other", which every scan loads.
+LANGUAGE_DIR = {
+    "javascript": "js", "js": "js", "typescript": "js", "ts": "js", "jsx": "js", "tsx": "js", "vue": "js",
+    "html": "html",
+    "python": "python", "py": "python", "python3": "python",
+    "go": "go", "golang": "go",
+    "java": "jvm", "kotlin": "jvm", "kt": "jvm", "scala": "jvm",
+    "c": "c", "cpp": "c", "c++": "c",
+    "csharp": "csharp", "c#": "csharp",
+    "php": "php",
+    "ruby": "ruby", "rb": "ruby",
+    "rust": "rust",
+    "swift": "swift",
+    "solidity": "solidity", "sol": "solidity",
+    "apex": "apex",
+    "elixir": "elixir", "ex": "elixir",
+    "bash": "bash", "sh": "bash",
+    "clojure": "clojure",
+    "ocaml": "ocaml",
+}
 
 SKIP_LANGUAGES = {"terraform", "hcl", "dockerfile", "yaml", "json", "generic", "regex", "none"}
 
@@ -146,6 +170,7 @@ def main():
     out = sys.argv[1]
     total = 0
     failed = False
+    per_language = {}
     for spec in sys.argv[2:]:
         name, _, rest = spec.partition("=")
         root, _, subs = rest.partition(":")
@@ -158,20 +183,25 @@ def main():
                 continue
             for k, v in dropped.items():
                 dropped_all[k] = dropped_all.get(k, 0) + v
-            if not kept:
-                continue
+            by_dir = {}
+            for rule in kept:
+                first = str(as_list(rule.get("languages"))[0]).lower()
+                by_dir.setdefault(LANGUAGE_DIR.get(first, "other"), []).append(rule)
             rel = os.path.relpath(path, root)
-            dest = os.path.join(out, name, rel)
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with open(dest, "w", encoding="utf-8") as f:
-                yaml.safe_dump({"rules": kept}, f, sort_keys=False, allow_unicode=True)
+            for lang, rules in by_dir.items():
+                dest = os.path.join(out, lang, name, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "w", encoding="utf-8") as f:
+                    yaml.safe_dump({"rules": rules}, f, sort_keys=False, allow_unicode=True)
+                per_language[lang] = per_language.get(lang, 0) + len(rules)
+                files += 1
             kept_n += len(kept)
-            files += 1
         total += kept_n
         summary = ", ".join(f"{k} {v}" for k, v in sorted(dropped_all.items()))
         print(f"{name}: kept {kept_n} rules in {files} files; dropped: {summary or 'none'}")
         if kept_n == 0:
             failed = True
+    print("by language: " + ", ".join(f"{k} {v}" for k, v in sorted(per_language.items())))
     print(f"total: {total} rules")
     sys.exit(1 if failed else 0)
 

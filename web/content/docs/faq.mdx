@@ -29,7 +29,7 @@ Yes. The GitHub App reads private repositories you give it access to. Each check
 
 ## Which languages does it support?
 
-It depends on the scanner. OpenGrep's rules cover about 20 languages, including JavaScript and TypeScript, Python, Go, Java, Kotlin, Scala, C#, C and C++, PHP, Ruby, Rust, Swift and Solidity. OSV-Scanner reads the lockfiles of 11 ecosystems. Trivy covers Dockerfiles, Kubernetes, Helm, Terraform, CloudFormation and Azure ARM. zizmor covers GitHub Actions. Gitleaks scans any text file. The AI agent reads whatever code is in the repository. See [Scanners](/docs/scanners).
+It depends on the scanner. OpenGrep's rules cover about 20 languages, including JavaScript and TypeScript, Python, Go, Java, Kotlin, Scala, C#, C and C++, PHP, Ruby, Rust, Swift and Solidity. OSV-Scanner reads the lockfiles of 11 ecosystems. Only the rules for languages in the repository run. Trivy covers Dockerfiles, Kubernetes, Helm, Terraform, CloudFormation and Azure ARM. zizmor covers GitHub Actions, and poutine GitLab CI, Azure Pipelines and Tekton. Spectral checks OpenAPI specs. Gitleaks scans any text file. The AI agent reads whatever code is in the repository. See [Scanners](/docs/scanners).
 
 ## What data leaves the sandbox?
 
