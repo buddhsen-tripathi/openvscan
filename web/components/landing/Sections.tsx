@@ -1,4 +1,6 @@
+import { AGENT_INFO, type AgentProvider } from "@openvscan/core";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { AgentLogo } from "@/components/brand/AgentLogo";
 import { BrushPanel, type BrushTone } from "@/components/brand/BrushPanel";
 import { ContourPanel } from "@/components/brand/ContourPanel";
 import { Book, Plus } from "@/components/icons";
@@ -50,9 +52,9 @@ export function Hero() {
             Security review for every pull request
           </h1>
           <p className="mt-6 max-w-[620px] text-[17px] leading-[1.6] text-stone sm:text-[19px]">
-            Seven open-source scanners check the change. Your own Claude Code,
-            Codex or Cursor triages what they find and reads the diff. The
-            result lands on the pull request as a check and review comments.
+            Open-source scanners check the change. Your own Claude Code, Codex
+            or Cursor triages what they find and reads the diff. The result
+            lands on the pull request as a check and review comments.
           </p>
           <div className="mt-9 flex flex-wrap justify-center gap-3">
             <Button href={INSTALL_HREF} arrow>
@@ -107,19 +109,96 @@ function Frame({
 
 /* ------------------------ Built on open-source scanners -------------------- */
 
-const SCANNERS: { name: string; what: string; href: string }[] = [
-  { name: "OpenGrep", what: "code", href: "/docs/scanners#opengrep" },
+const SCANNERS: { name: string; what: string; logo: string; href: string }[] = [
+  {
+    name: "OpenGrep",
+    what: "code",
+    logo: "opengrep.svg",
+    href: "/docs/scanners#opengrep",
+  },
   {
     name: "OSV-Scanner",
     what: "dependencies",
+    logo: "osv.svg",
     href: "/docs/scanners#osv-scanner",
   },
-  { name: "Gitleaks", what: "secrets", href: "/docs/scanners#gitleaks" },
-  { name: "Trivy", what: "infrastructure", href: "/docs/scanners#trivy" },
-  { name: "zizmor", what: "GitHub Actions", href: "/docs/scanners#zizmor" },
-  { name: "poutine", what: "CI pipelines", href: "/docs/scanners#poutine" },
-  { name: "Spectral", what: "OpenAPI", href: "/docs/scanners#spectral" },
+  {
+    name: "Gitleaks",
+    what: "secrets",
+    logo: "",
+    href: "/docs/scanners#gitleaks",
+  },
+  {
+    name: "Trivy",
+    what: "infrastructure",
+    logo: "trivy.svg",
+    href: "/docs/scanners#trivy",
+  },
+  {
+    name: "zizmor",
+    what: "GitHub Actions",
+    logo: "zizmor.svg",
+    href: "/docs/scanners#zizmor",
+  },
+  {
+    name: "poutine",
+    what: "CI pipelines",
+    logo: "poutine.png",
+    href: "/docs/scanners#poutine",
+  },
+  {
+    name: "Spectral",
+    what: "OpenAPI",
+    logo: "spectral.png",
+    href: "/docs/scanners#spectral",
+  },
 ];
+
+const AGENTS: { agent: AgentProvider; what: string }[] = [
+  { agent: "claude", what: "Claude Pro or Max, or an API key" },
+  { agent: "codex", what: "ChatGPT login or an API key" },
+  { agent: "cursor", what: "Cursor API key" },
+];
+
+/** Gitleaks' logo is the ASCII drawing at the top of its README. */
+function GitleaksMark() {
+  return (
+    <pre
+      aria-hidden="true"
+      className="font-mono text-[7.5px] leading-[1.05] text-[#16150f]"
+    >
+      {GITLEAKS_ASCII}
+    </pre>
+  );
+}
+
+const GITLEAKS_ASCII = [
+  "┌─○───┐",
+  "│ │╲  │",
+  "│ │ ○ │",
+  "│ ○ ░ │",
+  "└─░───┘",
+].join("\n");
+
+/** A logo on a white tile, so every mark keeps its own colours in both themes. */
+function LogoTile({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "grid size-14 place-items-center rounded-[14px] bg-white shadow-[0_0_0_1px_rgb(18_17_15/0.08),0_1px_2px_rgb(18_17_15/0.06)] transition-transform duration-200 group-hover:-translate-y-0.5 dark:shadow-[0_0_0_1px_rgb(255_255_255/0.1)]",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
 
 export function ScannerRow() {
   return (
@@ -145,12 +224,65 @@ export function ScannerRow() {
               href={s.href}
               className="group flex flex-col items-center text-center focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
             >
-              <span className="font-display text-[22px] tracking-[-0.02em] text-stone transition-colors group-hover:text-ink">
+              <LogoTile>
+                {s.logo ? (
+                  <img
+                    src={`/logos/${s.logo}`}
+                    alt=""
+                    width={32}
+                    height={32}
+                    loading="lazy"
+                    className={cn(
+                      "size-8 object-contain",
+                      s.name === "poutine" && "rounded-[6px]",
+                    )}
+                  />
+                ) : (
+                  <GitleaksMark />
+                )}
+              </LogoTile>
+              <span className="mt-3.5 font-display text-[19px] tracking-[-0.02em] text-ink-2 transition-colors group-hover:text-ink">
                 {s.name}
               </span>
               <span className="mt-1 font-mono text-[11px] tracking-[0.04em] text-pebble">
                 {s.what}
               </span>
+            </a>
+          ))}
+        </Reveal>
+
+        <Reveal className="mx-auto mt-24 max-w-[620px] text-center">
+          <h3 className="font-editorial text-[30px] leading-[1.1] text-ink sm:text-[36px]">
+            Reviewed by the agent you already use
+          </h3>
+          <p className="mt-4 text-[16px] leading-[1.6] text-stone">
+            Connect your own Claude Code, Codex or Cursor. It triages what the
+            scanners found and reads the diff for what they can&apos;t see.
+          </p>
+        </Reveal>
+        <Reveal
+          delay={0.06}
+          className="mx-auto mt-12 grid max-w-[760px] grid-cols-1 gap-8 sm:grid-cols-3"
+        >
+          {AGENTS.map((a) => (
+            <a
+              key={a.agent}
+              href="/docs/agent-credentials"
+              className="group flex flex-col items-center text-center focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
+            >
+              <LogoTile className="size-16 rounded-[16px]">
+                <AgentLogo
+                  agent={a.agent}
+                  className={cn(
+                    "size-8",
+                    a.agent !== "claude" && "text-[#16150f]",
+                  )}
+                />
+              </LogoTile>
+              <span className="mt-3.5 font-display text-[19px] tracking-[-0.02em] text-ink-2 transition-colors group-hover:text-ink">
+                {AGENT_INFO[a.agent].label}
+              </span>
+              <span className="mt-1 text-[13px] text-pebble">{a.what}</span>
             </a>
           ))}
         </Reveal>
@@ -216,10 +348,7 @@ export function WhatsNew() {
   return (
     <section id="product" className="scroll-mt-20 pt-28 sm:pt-40">
       <Container>
-        <SectionHeading
-          eyebrow="What's new"
-          title="Seven scanners that run only when they're needed"
-        >
+        <SectionHeading title="Scanners that run only when they're needed">
           On a pull request, each scanner looks at the changed files first and
           skips if nothing it reads was touched. The run page says why. The ones
           that run can't be turned off by the code they're scanning.
@@ -267,10 +396,7 @@ export function OnThePr() {
   return (
     <section className="pt-28 sm:pt-40">
       <Container>
-        <SectionHeading
-          eyebrow="On the pull request"
-          title="Findings where you already review code"
-        >
+        <SectionHeading title="Findings where you already review code">
           Comments land on the changed lines, the check can block the merge, and
           one summary comment keeps the whole picture current.
         </SectionHeading>
@@ -321,10 +447,7 @@ export function Skills() {
   return (
     <section id="skills" className="scroll-mt-20 pt-28 sm:pt-40">
       <Container>
-        <SectionHeading
-          eyebrow="Review skills"
-          title="Teach the reviewer how your code works"
-        >
+        <SectionHeading title="Teach the reviewer how your code works">
           Skills are markdown instructions the AI reviewer applies when a change
           matches: your conventions, a checklist for your framework, how you
           handle money or tenants. Start from four built-ins based on OWASP, or
@@ -444,10 +567,7 @@ export function Details() {
   return (
     <section id="security" className="scroll-mt-20 pt-28 sm:pt-40">
       <Container>
-        <SectionHeading
-          eyebrow="Details"
-          title="Built so a red check means something"
-        >
+        <SectionHeading title="Built so a red check means something">
           A review tool people learn to ignore is worse than none. These are the
           decisions that keep the signal high and your code and keys contained.
         </SectionHeading>
@@ -580,10 +700,7 @@ export function WaysToRun() {
   return (
     <section id="self-host" className="scroll-mt-20 pt-28 sm:pt-40">
       <Container>
-        <SectionHeading
-          eyebrow="Run it"
-          title="Hosted, or on your own Cloudflare account"
-        >
+        <SectionHeading title="Hosted, or on your own Cloudflare account">
           OpenVScan is open source, like PostHog: use the hosted cloud or deploy
           the same Workers yourself.
         </SectionHeading>

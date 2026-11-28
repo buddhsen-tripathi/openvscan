@@ -25,26 +25,6 @@ export function Container({
 }
 
 /** A small rounded label with a dot, above a section heading. */
-export function EyebrowPill({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <p
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full border border-rule bg-chalk/70 px-3 py-1 text-[13px] text-ink-2",
-        className,
-      )}
-    >
-      <span className="size-1.5 rounded-full bg-brand" />
-      {children}
-    </p>
-  );
-}
-
 export function Eyebrow({
   children,
   className,
@@ -57,12 +37,10 @@ export function Eyebrow({
 
 /** Eyebrow pill and serif title on the left, supporting copy on the right. */
 export function SectionHeading({
-  eyebrow,
   title,
   children,
   className,
 }: {
-  eyebrow?: string;
   title: ReactNode;
   children?: ReactNode;
   className?: string;
@@ -75,7 +53,6 @@ export function SectionHeading({
       )}
     >
       <div>
-        {eyebrow && <EyebrowPill className="mb-6">{eyebrow}</EyebrowPill>}
         <h2 className="max-w-[680px] font-editorial text-[44px] leading-[1.02] text-ink sm:text-[62px]">
           {title}
         </h2>
