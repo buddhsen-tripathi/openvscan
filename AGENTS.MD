@@ -39,7 +39,9 @@ pull_request webhook ─► web: upsert pull_request, dedupe by head sha,
 engine ReviewWorkflow (id = runId), each step durable + retried:
   load → github:check-run → github:diff (PR files → R2 diff.json / pr.diff)
   → sandbox:checkout (git fetch head sha, egress = checkout)
-  → scan:<trivy|opengrep|gitleaks> (egress = scan; raw → R2; parsed → finding)
+  → scan:plan (PR: skip scanners whose SCANNER_INFO triggers match no changed file)
+  → scan:<opengrep|osv|gitleaks|trivy|zizmor> (egress = spec.egress; raw → R2;
+    parsed → finding)
   → ai:start (decrypt credential, write PROMPT.md + findings + review
               skills, egress = agent, start agent as a detached task)
   → ai:wait:i / ai:poll:i (sleep 30s, poll, honour cancel)  ×≤50
@@ -60,7 +62,7 @@ engine and the dashboard): **fail** when any finding meets all of:
 - severity is at or above `run.fail_on`,
 - on a PR, it is in the diff (`in_diff`); manual branch runs count everything,
 - `ai_verdict` is not `false_positive`, except that the AI can't dismiss a
-  Gitleaks secret (`aiMayDismiss`).
+  Gitleaks secret or an OSV `MAL-` malicious package (`aiMayDismiss`).
 
 Otherwise the conclusion is **pass**, unless a finding would have blocked but
 for an AI dismissal (`isOverruled`): then **neutral**, and the summary lists
@@ -80,7 +82,7 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
   - `locked`: nothing.
   - `checkout`: git-upload-pack for one repo; adds a read-only token scoped to
     that single repo.
-  - `scan`: GET to the Trivy DB hosts.
+  - `scan`: OSV-Scanner's lookups on `api.osv.dev` only (`scanAllowed`).
   - `agent`: model calls only (`egress-rules.ts`: no files, batches,
     stored responses or key minting) on `api.anthropic.com`,
     `api.openai.com`, or `chatgpt.com`
@@ -264,11 +266,11 @@ OWNER/MEMBER/COLLABORATOR with push, or a bot) get scanners only, with
 | `web/src/routes/api/github/webhook.ts` | `pull_request` (per-repo `review_trigger`), `issue_comment` (`@<app> review/pause/resume/help`, write access only), `check_run` (re-run), installation events |
 | `web/src/routes/api/github/setup.ts` | install callback (`syncInstallation`: personal owner or org admin only; first owner keeps it) |
 | `engine/src/workflow.ts` | the pipeline |
-| `engine/src/scanners/index.ts` | scanner argv + output parsers (normalize, group, cap 500/scanner) |
+| `engine/src/scanners/` | one file per scanner (`ScannerSpec`: argv, ok exit codes, egress, parser); `index.ts` registry, `skipReason`, cap 500/scanner |
 | `engine/src/diff.ts` | PR patch → commentable lines, `in_diff`, unified diff for the agent |
 | `engine/src/report.ts` | conclusion, check output, annotations, inline comments, summary markdown (sanitized) |
 | `engine/src/dev.ts` | `/__dev/scan`, `/__dev/agent`, `/__dev/daytona`, `/__dev/destroy` (only with `DEV_ROUTES=true`) |
-| `engine/container/Dockerfile` | scanners + agents image (Trivy DB baked in) |
+| `engine/container/Dockerfile` | scanners + agents image; binaries pinned by SHA-256; OpenGrep rules curated at build (`container/rules/curate.py`, `prune.sh`) |
 
 ## Commands
 
@@ -330,7 +332,11 @@ pnpm run deploy           # engine, then web (`pnpm deploy` alone is a pnpm buil
   and re-insert by `run_id` + source. Reuse saved GitHub ids
   (`check_run_id`, `review_id`, `summary_comment_id`).
 - Do not include Semgrep registry rules; their license forbids this use.
-- The bundled opengrep-rules are LGPL-2.1 with the Commons Clause.
+- Rule packs: opengrep-rules (LGPL-2.1 + Commons Clause), GitLab sast-rules
+  (MIT; `rules/lgpl` LGPL-3.0), Trail of Bits (AGPL-3.0), 0xdea (MIT).
+- Scanners must not honour anything in the PR that could switch them off
+  (config files, ignore files, suppression comments). Gitleaks reads a root
+  `.gitleaksignore` regardless of flags, so its spec deletes it first.
 - AI review uses the **repo owner's** credential. So it starts on its own
   only for PR authors with write access; anyone else's PR (forks, bots) gets
   scanners only until a writer comments `@<app> review`.

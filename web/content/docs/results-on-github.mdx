@@ -15,7 +15,7 @@ Otherwise the review **fails** when at least one finding meets all three conditi
 
 - its severity is at or above the fail threshold,
 - it is in the diff, meaning on a line the pull request added or modified (see [Scanners](/docs/scanners#in-the-diff)),
-- the AI review did not mark it `false_positive`. Secrets found by Gitleaks are the exception: the agent's verdict is shown, but it cannot take a secret out of the gate.
+- the AI review did not mark it `false_positive`. Secrets found by Gitleaks and known-malicious packages found by OSV-Scanner are the exception: the agent's verdict is shown, but it cannot take them out of the gate.
 
 If no finding meets all three, the review **passes**, with one exception: when the only findings that would have failed it are ones the agent dismissed, the review is **neutral**. The agent reads code from the pull request, so its dismissal alone never turns the check green. The summary comment lists those findings under **Dismissed by the AI, would otherwise block**.
 
@@ -79,7 +79,7 @@ A finding gets an inline comment when:
 
 Comments are ordered by severity, and a review posts at most 25. A finding that spans several lines gets a multi-line comment when the whole range is commentable. Otherwise the comment goes on the last commentable line in the range.
 
-Each comment shows the severity, the source (Trivy, Opengrep, Gitleaks or AI review), the title and description, the agent's verdict and reasoning for scanner findings, the fix, and the rule id and CWE. When the agent supplied replacement code for exactly the commented lines, the comment includes a GitHub `suggestion` block you can commit in one click.
+Each comment shows the severity, the source (a scanner or the AI review), the title and description, the agent's verdict and reasoning for scanner findings, the fix, and the rule id and CWE. When the agent supplied replacement code for exactly the commented lines, the comment includes a GitHub `suggestion` block you can commit in one click.
 
 If no finding qualifies, no review is posted. If GitHub rejects the inline comments, the review is posted without them and the run log notes it. The summary comment still lands either way.
 

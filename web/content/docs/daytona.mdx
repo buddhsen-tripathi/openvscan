@@ -51,7 +51,7 @@ Rebuild the snapshot whenever you change the Dockerfile or upgrade OpenVScan, an
 
 - **Sandbox.** One sandbox per review, named `openvscan-<review id>`, created as `root` from the snapshot. The engine deletes it when the review ends, fails or is cancelled. As a backstop, Daytona stops it after 30 idle minutes, deletes it when it stops, and deletes it 3 hours after creation in any case.
 - **Checkout.** The engine asks GitHub for a tarball of the head commit and passes the sandbox a `codeload.github.com` URL. For a private repository the URL holds a token that works only for that archive and expires within minutes. No GitHub token enters the sandbox, and the checkout has no `.git` directory.
-- **Scanners.** They run as on Cloudflare. Trivy updates its database if it can reach its mirrors and otherwise uses the one in the snapshot.
+- **Scanners.** They run as on Cloudflare. In hybrid mode the network is your tier's default allowlist, so OSV-Scanner fails if `api.osv.dev` isn't on it; the run log says so and the other scanners still run.
 - **Long commands** run detached and the engine polls them, so no request stays open for the length of a scan.
 
 ## Credentials in full mode

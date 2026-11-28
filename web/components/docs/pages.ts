@@ -102,7 +102,7 @@ export const DOC_TABS: DocTab[] = [
             slug: "scanners",
             title: "Scanners",
             description:
-              "What Trivy, Opengrep and Gitleaks look for, how they are configured, and how their findings are normalized.",
+              "Which open-source scanners run, why each one was chosen, how they are hardened against the pull request they scan, and how findings are normalized.",
           },
           {
             slug: "ai-review",

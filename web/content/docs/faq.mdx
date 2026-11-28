@@ -7,7 +7,7 @@ Short answers, with links to the page that has the detail.
 
 ## Do I need Claude Code, Codex or Cursor?
 
-No. With **AI reviewer** set to **None**, OpenVScan runs Trivy, Opengrep and Gitleaks and publishes their findings. The agent adds triage of those findings and a review of the changed code. See [AI review](/docs/ai-review).
+No. With **AI reviewer** set to **None**, OpenVScan runs the scanners and publishes their findings. The agent adds triage of those findings and a review of the changed code. See [AI review](/docs/ai-review).
 
 ## What does it cost?
 
@@ -29,11 +29,11 @@ Yes. The GitHub App reads private repositories you give it access to. Each check
 
 ## Which languages does it support?
 
-It depends on the scanner. Trivy covers the dependency manifests, lockfiles and infrastructure-as-code formats it supports. Opengrep runs the security rules in the bundled opengrep-rules pack, which cover many languages. Gitleaks scans any text file. The AI agent reads whatever code is in the repository. See [Scanners](/docs/scanners).
+It depends on the scanner. OpenGrep's rules cover about 20 languages, including JavaScript and TypeScript, Python, Go, Java, Kotlin, Scala, C#, C and C++, PHP, Ruby, Rust, Swift and Solidity. OSV-Scanner reads the lockfiles of 11 ecosystems. Trivy covers Dockerfiles, Kubernetes, Helm, Terraform, CloudFormation and Azure ARM. zizmor covers GitHub Actions. Gitleaks scans any text file. The AI agent reads whatever code is in the repository. See [Scanners](/docs/scanners).
 
 ## What data leaves the sandbox?
 
-During checkout, a git fetch from GitHub. During the Trivy step, a database download from Trivy's mirrors. During the AI review, requests to the model API (`api.anthropic.com`, `api.openai.com`, the Codex backend on `chatgpt.com`, or `*.cursor.sh`), which carry whatever code and findings the agent reads. Nothing else can leave. Results are posted to GitHub by the engine, outside the sandbox. See [Security model](/docs/security-model).
+During checkout, a git fetch from GitHub. During the OSV-Scanner step, advisory lookups on `api.osv.dev`, which carry package names and versions but no code. During the AI review, requests to the model API (`api.anthropic.com`, `api.openai.com`, the Codex backend on `chatgpt.com`, or `*.cursor.sh`), which carry whatever code and findings the agent reads. Nothing else can leave. Results are posted to GitHub by the engine, outside the sandbox. See [Security model](/docs/security-model).
 
 ## Will it block my merge?
 
@@ -41,7 +41,7 @@ Only if you make it. A failing review sets the `OpenVScan Security Review` check
 
 ## Why did a pull request fail on a vulnerability it did not add?
 
-Dependency vulnerabilities have no line number, so they count as in the diff whenever the pull request changes the manifest or lockfile they were found in. Touching a lockfile brings all of its known vulnerabilities into the diff. See [Scanners](/docs/scanners#in-the-diff).
+A dependency vulnerability counts as in the diff only when the pull request added that package version to the lockfile. Vulnerabilities in dependencies the pull request didn't change are reported as pre-existing. See [Scanners](/docs/scanners#in-the-diff).
 
 ## Why was my draft pull request not reviewed?
 

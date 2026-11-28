@@ -45,7 +45,7 @@ When a review is created, it records the repository's scanners, AI reviewer, mod
 | Check run | Creates the `OpenVScan Security Review` check on the head commit with status in progress. Its details link points to the review in the dashboard. |
 | Diff | Fetches the pull request's changed files and patches from the GitHub API. This is the same diff GitHub shows, and it decides which findings are in the diff and where inline comments can go. |
 | Checkout | Starts a sandbox container for this review and fetches exactly the head commit, at depth 1, through the egress proxy using a read-only token for this one repository. |
-| Scanners | Runs each enabled scanner as its own step: Trivy, then Opengrep, then Gitleaks. |
+| Scanners | Runs each enabled scanner as its own step: OpenGrep, OSV-Scanner, Gitleaks, Trivy, then zizmor. On a pull request, OSV-Scanner, Trivy and zizmor are skipped when the change touches none of the files they read. |
 | AI review | Runs only if an AI reviewer is set. Writes the prompt, diff and scanner findings into the sandbox, starts the agent in the background, and checks on it every 30 seconds. |
 | Publish | Decides the conclusion, completes the check run with annotations, posts the inline review, and creates or updates the summary comment. |
 | Cleanup | Destroys the sandbox. |
@@ -61,9 +61,11 @@ See [Scanners](/docs/scanners), [AI review](/docs/ai-review) and [Results on Git
 | Stage | Limit |
 |-------|-------|
 | Checkout | 10 minutes for the git fetch. The step is retried up to 2 times. |
-| Trivy | 10 minutes |
-| Opengrep | 15 minutes |
+| OpenGrep | 15 minutes |
+| OSV-Scanner | 10 minutes |
 | Gitleaks | 5 minutes |
+| Trivy | 10 minutes |
+| zizmor | 5 minutes |
 | AI review | About 25 minutes: 50 checks, 30 seconds apart |
 | Publish | 5 minutes, retried up to 3 times |
 

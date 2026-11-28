@@ -637,7 +637,7 @@ function SettingsForm({ repo }: { repo: Repo }) {
 
       <SettingsSection
         title="Scanners"
-        description="Open-source scanners that run in an isolated container on every review."
+        description="Open-source scanners that run in an isolated container. On a pull request, dependency, infrastructure and workflow scanners run only when the change touches files they read."
       >
         <div className="grid gap-3 md:grid-cols-3">
           {SCANNERS.map((s) => (

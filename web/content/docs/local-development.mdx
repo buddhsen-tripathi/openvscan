@@ -98,7 +98,7 @@ You can also add `DEV_ROUTES=true` to `engine/.dev.vars`.
 curl -X POST localhost:8787/__dev/scan -d '{"repo":"OWASP/NodeGoat"}'
 ```
 
-This boots a sandbox, checks that a request to `https://example.com` is refused, clones the public repository through the egress proxy, checks that fetching a different repository is refused, then runs Trivy, Opengrep and Gitleaks. The JSON response reports:
+This boots a sandbox, checks that a request to `https://example.com` is refused, clones the public repository through the egress proxy, checks that fetching a different repository is refused, then runs every scanner. The JSON response reports:
 
 - `egressBlockedStatus`: the result of the blocked request.
 - `clone`: the clone's exit code and stderr.

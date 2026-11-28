@@ -92,7 +92,7 @@ When `DEV_ROUTES` is `"true"`, anyone who can reach the engine's public URL can 
 - `standard-3`
 - `standard-4`
 
-`SANDBOX_INSTANCE` applies to Cloudflare containers only; size Daytona sandboxes when you build the snapshot. Each run gets its own container, and the whole run (clone, scanners and agent) happens on it. Larger types cost more per second of runtime. Smaller types lower cost but leave less memory and CPU for Trivy, Opengrep and the agent on large repositories. Start with the default and adjust based on run times and failures you see in the dashboard. Cloudflare's Containers documentation lists the vCPU, memory and disk of each type.
+`SANDBOX_INSTANCE` applies to Cloudflare containers only; size Daytona sandboxes when you build the snapshot. Each run gets its own container, and the whole run (clone, scanners and agent) happens on it. Larger types cost more per second of runtime. Smaller types lower cost but leave less memory and CPU for the scanners and the agent on large repositories. Start with the default and adjust based on run times and failures you see in the dashboard. Cloudflare's Containers documentation lists the vCPU, memory and disk of each type.
 
 ## Bindings
 
@@ -113,6 +113,6 @@ Some names are referenced outside the binding itself. Keep them unless you chang
 
 ## Container image build arguments
 
-`engine/container/Dockerfile` pins the tool versions with build arguments: `TRIVY_VERSION`, `GITLEAKS_VERSION`, `OPENGREP_VERSION`, `CLAUDE_CODE_VERSION`, `CODEX_VERSION` and `SANDBOX_VERSION`. `OPENGREP_RULES_REPO` and `OPENGREP_RULES_COMMIT` choose the Opengrep rules. Point them at your own rules repository if the opengrep-rules license does not suit your deployment.
+`engine/container/Dockerfile` pins the tool versions with build arguments: `OPENGREP_VERSION`, `OSV_SCANNER_VERSION`, `GITLEAKS_VERSION`, `TRIVY_VERSION`, `ZIZMOR_VERSION`, `CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `CURSOR_AGENT_VERSION` and `SANDBOX_VERSION`. Each scanner also has `*_SHA256_AMD64` and `*_SHA256_ARM64` arguments, and the build fails if a download doesn't match. `OPENGREP_RULES_COMMIT`, `GITLAB_RULES_COMMIT`, `TRAILOFBITS_RULES_COMMIT` and `OXDEA_RULES_COMMIT` pin the OpenGrep rule packs; see [Scanners](/docs/scanners#rules).
 
 Change them by editing the defaults in the Dockerfile, and change them deliberately. Keep `SANDBOX_VERSION` in step with the `@cloudflare/sandbox` version in `engine/package.json`. The scanner output parsers in `engine/src/scanners` depend on each tool's flags and output format.

@@ -828,9 +828,11 @@ function ScannerStats({ run }: { run: RunDetail }) {
                   </span>
                 </div>
                 <div className="text-[12.5px] text-muted-foreground">
-                  {stat
-                    ? `${stat.findings} finding${stat.findings === 1 ? "" : "s"}`
-                    : "Waiting"}
+                  {!stat
+                    ? "Waiting"
+                    : stat.status === "skipped" && stat.reason
+                      ? stat.reason
+                      : `${stat.findings} finding${stat.findings === 1 ? "" : "s"}`}
                 </div>
                 {stat?.error && (
                   <div

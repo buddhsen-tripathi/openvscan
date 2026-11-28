@@ -169,7 +169,7 @@ Make sure Docker is running, then:
 pnpm --filter openvscan-engine exec wrangler deploy --secrets-file ~/openvscan-secrets/engine.env
 ```
 
-Wrangler builds the container image from `engine/container/Dockerfile`, pushes it to Cloudflare, and deploys the Worker, the `openvscan-review` Workflow and the `ScanSandbox` Durable Object. The first build downloads the scanners, the Trivy vulnerability database, opengrep-rules and both agent CLIs, so it takes several minutes.
+Wrangler builds the container image from `engine/container/Dockerfile`, pushes it to Cloudflare, and deploys the Worker, the `openvscan-review` Workflow and the `ScanSandbox` Durable Object. The first build downloads the scanners, the OpenGrep rule packs and the agent CLIs, and curates the rules, so it takes several minutes.
 
 `engine/wrangler.jsonc` lists `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` and `CREDENTIALS_KEY` under `secrets.required`. Wrangler refuses to create the engine without them, and `wrangler secret put` cannot set secrets on a Worker that does not exist yet. That is why the first deploy uses `--secrets-file`.
 

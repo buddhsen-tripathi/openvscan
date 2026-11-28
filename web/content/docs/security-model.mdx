@@ -19,9 +19,9 @@ The engine switches the egress policy as the review moves between steps. Each ph
 
 | Phase | Used during | Allowed |
 |-------|-------------|---------|
-| `locked` | Between steps, and while Opengrep and Gitleaks run | Nothing |
+| `locked` | Between steps, and while OpenGrep, Gitleaks, Trivy and zizmor run | Nothing |
 | `checkout` | Fetching the head commit | `git fetch` of the one repository under review: `GET /info/refs?service=git-upload-pack` and `POST /git-upload-pack` on `github.com`. Push and every other repository are refused. |
-| `scan` | The Trivy step only | `GET` and `HEAD` to Trivy's database hosts: `mirror.gcr.io`, `ghcr.io`, `pkg-containers.githubusercontent.com` |
+| `scan` | The OSV-Scanner step only | On `api.osv.dev`: `POST /v1/querybatch` and `/v1/query` (package names, versions and ecosystems) and `GET /v1/vulns/<id>`. No source code. |
 | `agent` | The AI review | Claude Code: on `api.anthropic.com`, `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models` and read-only account lookups under `/api/`. Codex with an API key: on `api.openai.com`, creating responses and chat completions and listing models. Codex with a ChatGPT login or access token: the Codex backend on `chatgpt.com`. Cursor: `*.cursor.sh`, except its sign-in endpoints. Nothing else. |
 
 Refused requests get a `403` response and are logged by the engine.
@@ -47,11 +47,11 @@ Inside the sandbox, the agent can read the checked-out code and run shell comman
 
 - It validates the file against a strict schema with size limits. Anything that does not validate is discarded.
 - It applies verdicts only to finding ids it gave the agent. The agent cannot dismiss a finding it was not shown.
-- It never lets the agent turn the check green on its own. A dismissed finding that would have failed the check makes the review neutral, not passing. A Gitleaks secret stays in the gate whatever the agent says. The agent may re-rate severity, but cannot lower a finding from at or above the fail threshold to below it.
+- It never lets the agent turn the check green on its own. A dismissed finding that would have failed the check makes the review neutral, not passing. A Gitleaks secret or a known-malicious package (OSV `MAL-` id) stays in the gate whatever the agent says. The agent may re-rate severity, but cannot lower a finding from at or above the fail threshold to below it.
 - It sanitizes all text before posting it to GitHub: it removes HTML, neutralizes `@` mentions, and stops images, links, bare URLs and issue references from rendering. See [Results on GitHub](/docs/results-on-github#sanitization).
 - All GitHub writes (check runs, reviews, comments) are made by the engine, not the agent.
 
-Scanner output is handled the same way. It is parsed by fixed parsers in the engine and sanitized before it is posted.
+Scanner output is handled the same way. It is parsed by fixed parsers in the engine and sanitized before it is posted. The scanners also ignore every config file, ignore file and suppression comment the pull request could use to switch them off; see [Scanners](/docs/scanners#hardened-against-the-pull-request).
 
 ## What is stored where
 
