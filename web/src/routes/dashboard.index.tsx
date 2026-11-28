@@ -271,21 +271,33 @@ function Exposure({
   );
 }
 
-/** First-run checklist: GitHub App → repository → agent credential. */
+/** First-run checklist: GitHub link → GitHub App → repository → agent credential. */
 function SetupChecklist({ repositories }: { repositories: number }) {
   const { data: connection } = useGithubConnectionQuery();
   const { data: creds } = useCredentialsQuery();
   if (!connection || !creds) return null;
   const hasInstall = connection.installations.length > 0;
+  const linked = Boolean(connection.githubLogin) || hasInstall;
   const hasCred = creds.credentials.length > 0;
   if (hasInstall && repositories > 0 && hasCred) return null;
 
   const steps = [
     {
+      done: linked,
+      title: "Link your GitHub account",
+      desc: "So only you can connect the accounts and orgs you administer.",
+      href: `/api/github/link?redirect=${encodeURIComponent("/dashboard")}`,
+      cta: "Link",
+      icon: Github,
+    },
+    {
       done: hasInstall,
       title: "Install the GitHub App",
       desc: "Choose which repositories OpenVScan can read.",
-      href: connection.installUrl ?? "/dashboard/repositories",
+      // Installing before linking fails the ownership check.
+      href: linked
+        ? (connection.installUrl ?? "/dashboard/repositories")
+        : "/dashboard/repositories",
       cta: "Install",
       icon: Github,
     },
@@ -313,13 +325,13 @@ function SetupChecklist({ repositories }: { repositories: number }) {
       <div className="grid lg:grid-cols-[280px_minmax(0,1fr)]">
         <div className="border-b border-border p-5 lg:border-r lg:border-b-0">
           <div className="eyebrow text-[10.5px] text-muted-foreground">
-            Setup · {doneCount} of 3
+            Setup · {doneCount} of {steps.length}
           </div>
           <h2 className="mt-2 font-display text-[22px] leading-tight tracking-[-0.01em] text-foreground">
             Get your first review
           </h2>
           <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
-            Three steps, then open a pull request and watch the check appear.
+            A few steps, then open a pull request and watch the check appear.
           </p>
           <div className="mt-4 flex gap-1">
             {steps.map((s) => (

@@ -27,6 +27,8 @@ interface CreateRunInput {
   headSha: string;
   /** PR base sha; null for branch runs (full scan, no diff). */
   baseSha?: string | null;
+  /** Run the scanners only, and show this note in place of the AI review. */
+  aiSkipped?: string | null;
 }
 
 /** Insert a queued run and start it on the engine. Returns the run id. */
@@ -46,8 +48,10 @@ export async function createAndStartRun(
     headSha: input.headSha,
     baseSha: input.baseSha ?? null,
     scanners: input.repo.scanners,
-    agent: input.repo.agent,
-    agentModel: input.repo.agentModel,
+    // No AI step when skipped: the note says why.
+    agent: input.aiSkipped ? null : input.repo.agent,
+    agentModel: input.aiSkipped ? null : input.repo.agentModel,
+    aiSkipped: input.aiSkipped ?? null,
     failOn: input.repo.failOn,
     instructions: input.repo.instructions,
     focus: input.repo.focus,

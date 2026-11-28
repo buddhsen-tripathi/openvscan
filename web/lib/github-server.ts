@@ -26,6 +26,7 @@ import {
   isGithubConfigured,
   octokitForInstallation,
 } from "@/lib/github";
+import { isGithubLinkConfigured, linkedGithub } from "@/lib/github-account";
 import { createAndStartRun, releaseRepositories } from "@/lib/runs";
 import { requireUserId } from "@/lib/user";
 import { getEnv } from "@/src/lib/env";
@@ -39,10 +40,15 @@ export const getGithubConnection = createServerFn({ method: "GET" }).handler(
     const installations = await db.query.githubInstallation.findMany({
       where: eq(schema.githubInstallation.userId, userId),
     });
+    const linked = await linkedGithub(userId);
     return {
       configured: isGithubConfigured(),
       installUrl: installUrl(),
       installations,
+      // Installing needs a linked GitHub account: the setup callback checks
+      // with the user's own token that they own (or admin) the installation.
+      githubLogin: linked?.login ?? null,
+      linkConfigured: isGithubLinkConfigured(),
     };
   },
 );

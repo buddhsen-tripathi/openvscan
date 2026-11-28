@@ -3,6 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import {
   AGENT_PROVIDERS,
   FAIL_THRESHOLDS,
+  isDismissed,
   REVIEW_FOCUS,
   REVIEW_TRIGGERS,
   SCANNERS,
@@ -196,7 +197,7 @@ function buildServer(userId: string): McpServer {
             (f) => !min_severity || rank(f.severity) <= rank(min_severity),
           )
           .filter((f) => !in_diff_only || f.inDiff)
-          .filter((f) => include_dismissed || f.aiVerdict !== "false_positive")
+          .filter((f) => include_dismissed || !isDismissed(f))
           .slice(0, 200);
         return json({
           id: run.id,
@@ -216,6 +217,7 @@ function buildServer(userId: string): McpServer {
           aiSummary: run.aiSummary,
           aiRisk: run.aiRisk,
           aiError: run.aiError,
+          aiSkipped: run.aiSkipped,
           error: run.error,
           counts: run.counts,
           url: appUrl(`/dashboard/runs/${run.id}`),

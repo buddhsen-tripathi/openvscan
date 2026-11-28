@@ -27,6 +27,21 @@ export const FINDINGS_PATH = `${WORK_DIR}/scanner-findings.json`;
 export const REVIEW_PATH = `${WORK_DIR}/review.json`;
 /** Codex's config dir; holds the placeholder auth.json for a ChatGPT login. */
 export const CODEX_HOME = "/workspace/.codex";
+/** HOME for the Cursor CLI, which reads `~/.cursor/cli-config.json`. */
+export const CURSOR_HOME = "/workspace/.cursor-home";
+export const CURSOR_CONFIG_PATH = `${CURSOR_HOME}/.cursor/cli-config.json`;
+/**
+ * The sandbox's egress interception speaks HTTP/1.1 only, and the Cursor CLI
+ * uses HTTP/2 unless told otherwise ("expected h2 session, but ALPN protocol
+ * failed to negotiate"). `network.useHttp1ForAgent` is Cursor's documented
+ * fallback for proxies: https://cursor.com/docs/cli/reference/configuration
+ */
+export const CURSOR_CLI_CONFIG = JSON.stringify({
+  version: 1,
+  editor: { vimMode: false },
+  permissions: { allow: [], deny: [] },
+  network: { useHttp1ForAgent: true },
+});
 
 /** Placeholder the CLI sends; the egress proxy swaps in the real secret. */
 const PLACEHOLDER = "openvscan-injected-at-egress";
@@ -199,7 +214,7 @@ export function agentInvocation(
         ...(model ? ["--model", model] : []),
         SHORT_TASK,
       ],
-      env: {},
+      env: { HOME: CURSOR_HOME },
     };
   }
   // CODEX_HOME holds only the placeholder auth.json the engine writes for a

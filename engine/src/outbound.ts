@@ -1,6 +1,7 @@
 import type { CredentialKind } from "@openvscan/core";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { TRIVY_DB_HOSTS } from "./box";
+import { anthropicAllowed, openaiAllowed } from "./egress-rules";
 
 /**
  * Egress policy for a review sandbox, passed as trusted `props` when the
@@ -103,6 +104,9 @@ export class Outbound extends WorkerEntrypoint<Env, EgressPolicy> {
         if (url.hostname !== "api.anthropic.com") {
           return deny(`${url.hostname} is not reachable during the AI review`);
         }
+        if (!anthropicAllowed(request.method, url.pathname)) {
+          return deny(`${request.method} ${url.pathname} is not needed for a review`);
+        }
         headers.delete("authorization");
         headers.delete("x-api-key");
         if (policy.kind === "claude_oauth_token") {
@@ -116,6 +120,12 @@ export class Outbound extends WorkerEntrypoint<Env, EgressPolicy> {
         if (url.hostname !== "api.openai.com") {
           return deny(`${url.hostname} is not reachable during the AI review`);
         }
+        if (!openaiAllowed(request.method, url.pathname)) {
+          return deny(`${request.method} ${url.pathname} is not needed for a review`);
+        }
+        // The key decides the org and project, not the sandbox.
+        headers.delete("openai-organization");
+        headers.delete("openai-project");
         headers.set("authorization", `Bearer ${policy.secret}`);
         break;
       }

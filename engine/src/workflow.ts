@@ -8,10 +8,12 @@ import {
   openSecret,
   isRelevant,
   matchesPath,
+  meetsThreshold,
   type ReviewFocus,
   type Scanner,
   SCANNERS,
   type ScannerStat,
+  type Severity,
   severityRank,
 } from "@openvscan/core";
 import { chunk } from "@openvscan/db";
@@ -30,6 +32,8 @@ import {
   agentInvocation,
   buildPrompt,
   CODEX_HOME,
+  CURSOR_CLI_CONFIG,
+  CURSOR_CONFIG_PATH,
   filterAgentFindings,
   DIFF_PATH,
   FINDINGS_PATH,
@@ -659,6 +663,10 @@ async function startAgent(
   );
 
   const inv = agentInvocation(provider, kind, c.agentModel, keyStandIn);
+  // Codex refuses to start when CODEX_HOME is missing; only a ChatGPT login
+  // writes a file there, so create it for the key and access-token kinds too.
+  if (provider === "codex") await sb.exec(["mkdir", "-p", CODEX_HOME]);
+  if (provider === "cursor") await sb.writeText(CURSOR_CONFIG_PATH, CURSOR_CLI_CONFIG);
   // From here until ai:collect the sandbox can reach ONLY the model API, and
   // the proxy (not the sandbox) holds the credential.
   await sb.setEgress(egress);
@@ -722,18 +730,35 @@ async function collectAgent(
 
   // Apply triage only to findings we actually gave the agent.
   const allowed = new Set(started.findingIds);
-  const updates = review.triage
-    .filter((t) => allowed.has(t.id))
-    .map((t) =>
-      db
-        .update(schema.finding)
-        .set({
-          aiVerdict: t.verdict,
-          aiReasoning: t.reasoning,
-          ...(t.severity ? { severity: t.severity } : {}),
-        })
-        .where(and(eq(schema.finding.id, t.id), eq(schema.finding.runId, c.runId))),
-    );
+  const triage = review.triage.filter((t) => allowed.has(t.id));
+  // The agent may re-rate severity, but not lower a finding from at or above
+  // the fail threshold to below it: that would clear the gate as surely as a
+  // dismissal does, without showing up as one.
+  const current = new Map<string, Severity>();
+  for (const ids of chunk(
+    triage.filter((t) => t.severity).map((t) => t.id),
+    90,
+  )) {
+    const rows = await db
+      .select({ id: schema.finding.id, severity: schema.finding.severity })
+      .from(schema.finding)
+      .where(and(eq(schema.finding.runId, c.runId), inArray(schema.finding.id, ids)));
+    for (const r of rows) current.set(r.id, r.severity);
+  }
+  const keepsGate = (id: string, next: Severity) => {
+    const was = current.get(id);
+    return !(was && meetsThreshold(was, c.failOn) && !meetsThreshold(next, c.failOn));
+  };
+  const updates = triage.map((t) =>
+    db
+      .update(schema.finding)
+      .set({
+        aiVerdict: t.verdict,
+        aiReasoning: t.reasoning,
+        ...(t.severity && keepsGate(t.id, t.severity) ? { severity: t.severity } : {}),
+      })
+      .where(and(eq(schema.finding.id, t.id), eq(schema.finding.runId, c.runId))),
+  );
   await batchAll(db, updates);
 
   const diff = c.isPr ? await loadDiffMap(env, c.runId) : null;
@@ -804,6 +829,7 @@ async function publish(
     aiSummary: run?.aiSummary ?? null,
     aiRisk: run?.aiRisk ?? null,
     aiError: run?.aiError ?? null,
+    aiSkipped: run?.aiSkipped ?? null,
     scannerErrors: Object.entries(stats)
       .filter(([, s]) => s.status === "failed")
       .map(([n, s]) => `${n} failed: ${s.error ?? "error"}`),

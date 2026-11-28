@@ -11,6 +11,8 @@ export default function AppLink({ href, children, ...props }: AppLinkProps) {
     href.startsWith("http://") ||
     href.startsWith("https://") ||
     href.startsWith("mailto:") ||
+    // Server routes (OAuth redirects and the like) need a full navigation.
+    href.startsWith("/api/") ||
     // In-page anchors: plain <a> so the browser scrolls to the section.
     href.startsWith("#") ||
     href.startsWith("/#");

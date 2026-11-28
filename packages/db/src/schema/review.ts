@@ -89,6 +89,11 @@ export const run = sqliteTable(
     aiRisk: text("ai_risk"),
     /** Why the AI step didn't run / failed, if it didn't succeed. */
     aiError: text("ai_error"),
+    /**
+     * Set when the AI step was deliberately not run (e.g. a pull request
+     * from someone without write access): the note shown instead.
+     */
+    aiSkipped: text("ai_skipped"),
     counts: text("counts", { mode: "json" }).$type<SeverityCounts>(),
     scannerStats: text("scanner_stats", { mode: "json" }).$type<
       Record<string, ScannerStat>

@@ -54,8 +54,22 @@ describe("decideConclusion", () => {
   it("counts findings outside a diff for branch runs", () => {
     expect(decideConclusion([f({ inDiff: false })], { ...ctx, isPr: false })).toBe("fail");
   });
-  it("ignores AI-dismissed false positives", () => {
-    expect(decideConclusion([f({ aiVerdict: "false_positive" })], ctx)).toBe("pass");
+  it("does not pass a run on an AI dismissal of a blocking finding", () => {
+    // Would block without the dismissal: neutral, so a person looks.
+    expect(decideConclusion([f({ aiVerdict: "false_positive" })], ctx)).toBe("neutral");
+    // Below the threshold or outside the diff, a dismissal is just noise removed.
+    expect(decideConclusion([f({ aiVerdict: "false_positive", severity: "low" })], ctx)).toBe("pass");
+    expect(decideConclusion([f({ aiVerdict: "false_positive", inDiff: false })], ctx)).toBe("pass");
+  });
+  it("never lets the AI dismiss a committed secret", () => {
+    const secret = f({ source: "gitleaks", aiVerdict: "false_positive", aiReasoning: "test fixture" });
+    expect(decideConclusion([secret], ctx)).toBe("fail");
+    expect(buildSummaryComment([secret], "fail", ctx)).not.toContain("dismissed by the AI");
+  });
+  it("lists overruled findings in the summary", () => {
+    const body = buildSummaryComment([f({ aiVerdict: "false_positive" })], "neutral", ctx);
+    expect(body).toContain("would otherwise block");
+    expect(body).toContain("Tainted sql string");
   });
   it("respects the threshold and advisory mode", () => {
     expect(decideConclusion([f({ severity: "medium" })], ctx)).toBe("pass");
@@ -74,6 +88,20 @@ describe("sanitize", () => {
     expect(out).not.toMatch(/@octocat/);
     expect(out).toContain("@​octocat");
     expect(out).not.toMatch(/<img|<!--/);
+  });
+
+  it("leaves no images, links, bare URLs or issue references", () => {
+    const out = sanitize(
+      "see ![x](https://evil.test/?d=secret) and [click](http://evil.test) [r]: https://evil.test www.evil.test fixes #12, owner/repo#3, GH-4",
+    );
+    // Brackets are escaped, so neither the image nor the link renders.
+    expect(out).not.toMatch(/(^|[^\\])!\[/);
+    expect(out).not.toMatch(/(^|[^\\])\]\(/);
+    expect(out).not.toMatch(/https?:\/\//);
+    expect(out).not.toMatch(/www\./);
+    expect(out).not.toMatch(/#\d|GH-\d/);
+    // Still readable: only zero-width spaces and backslashes were added.
+    expect(out.replace(/[\u200b\\]/g, "")).toContain("fixes #12, owner/repo#3, GH-4");
   });
 });
 

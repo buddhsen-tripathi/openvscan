@@ -17,11 +17,11 @@ Self-hosting needs the Cloudflare Workers Paid plan for Containers, plus whateve
 
 ## Whose credential pays for a review?
 
-The credential of the OpenVScan user who connected the repository. Every pull request on that repository uses it, including pull requests from forks. See [Agent credentials](/docs/agent-credentials#whose-credential-a-review-uses).
+The credential of the OpenVScan user who connected the repository. Pull requests from people without write access only get the AI review when someone with write access asks for it with a comment. See [Agent credentials](/docs/agent-credentials#whose-credential-a-review-uses).
 
 ## Does it review pull requests from forks?
 
-Yes. GitHub serves a pull request's head commit from the base repository, so OpenVScan fetches it with a token scoped to your repository and never needs access to the fork. The AI review uses the repository owner's credential, so outside contributors spend your quota.
+Yes. GitHub serves a pull request's head commit from the base repository, so OpenVScan fetches it with a token scoped to your repository and never needs access to the fork. Scanners run on every fork pull request. The AI review uses the repository owner's credential, so for authors without write access it runs only when someone with write access comments `@<app> review`.
 
 ## Does it work on private repositories?
 

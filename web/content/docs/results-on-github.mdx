@@ -15,9 +15,9 @@ Otherwise the review **fails** when at least one finding meets all three conditi
 
 - its severity is at or above the fail threshold,
 - it is in the diff, meaning on a line the pull request added or modified (see [Scanners](/docs/scanners#in-the-diff)),
-- the AI review did not mark it `false_positive`.
+- the AI review did not mark it `false_positive`. Secrets found by Gitleaks are the exception: the agent's verdict is shown, but it cannot take a secret out of the gate.
 
-If no finding meets all three, the review **passes**.
+If no finding meets all three, the review **passes**, with one exception: when the only findings that would have failed it are ones the agent dismissed, the review is **neutral**. The agent reads code from the pull request, so its dismissal alone never turns the check green. The summary comment lists those findings under **Dismissed by the AI, would otherwise block**.
 
 Findings the agent marked `confirmed` or `needs_review`, and findings it was never asked about, all count. In a branch review there is no diff, so the second condition does not apply.
 
@@ -26,7 +26,9 @@ With the default threshold of **High**:
 | Finding | Result |
 |---------|--------|
 | High severity, on a changed line | Fail |
-| High severity, on a changed line, marked `false_positive` by the agent | Pass |
+| High severity, on a changed line, marked `false_positive` by the agent | Neutral, listed for a person to check |
+| Low severity, on a changed line, marked `false_positive` by the agent | Pass |
+| A Gitleaks secret on a changed line, marked `false_positive` by the agent | Fail |
 | Critical severity, in a file the pull request did not touch | Pass, reported as pre-existing |
 | Medium severity, on a changed line | Pass, reported as a lower-severity finding |
 
@@ -104,6 +106,8 @@ Scanner output and agent output both come from code an attacker can control. Bef
 - removes HTML comment markers, so text cannot forge or hide content such as the summary marker,
 - strips HTML tags,
 - inserts a zero-width space after `@`, so text cannot mention and notify GitHub users or teams,
+- escapes `[` and `]`, so text cannot render images or links. GitHub fetches image URLs when a comment is viewed, so an injected image could otherwise send private code to another server,
+- breaks bare URLs and issue references (`#12`, `owner/repo#12`, `GH-12`) with a zero-width space, so text cannot link out or create cross-references in other repositories,
 - trims the text and truncates it to a fixed length for each field.
 
 Inside suggestion blocks, triple backticks are replaced so the code cannot break out of the block. In inline code spans, backticks are replaced with single quotes.
