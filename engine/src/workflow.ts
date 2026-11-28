@@ -1,10 +1,13 @@
 import {
   AGENT_INFO,
   type AgentProvider,
+  builtinSkill,
   type CodexLogin,
   countBySeverity,
   CREDENTIAL_INFO,
   type FailThreshold,
+  fitSkillsToBudget,
+  isBuiltinSkillId,
   openSecret,
   isRelevant,
   matchesPath,
@@ -15,6 +18,7 @@ import {
   type ScannerStat,
   type Severity,
   severityRank,
+  SKILL_LIMITS,
 } from "@openvscan/core";
 import { chunk } from "@openvscan/db";
 import {
@@ -38,8 +42,10 @@ import {
   DIFF_PATH,
   FINDINGS_PATH,
   parseAgentReview,
+  planSkillFiles,
   PROMPT_PATH,
   REVIEW_PATH,
+  type RunSkill,
   TASK_DIR,
   WORK_DIR,
 } from "./agent";
@@ -115,6 +121,8 @@ interface RunContext {
   instructions: string | null;
   focus: ReviewFocus[];
   ignorePaths: string[];
+  /** Review skill ids, in selection order. */
+  skills: string[];
 }
 
 const AI_POLL_INTERVAL = "30 seconds";
@@ -305,6 +313,7 @@ async function loadContext(db: Db, runId: string): Promise<RunContext | null> {
     instructions: run.instructions,
     focus: run.focus,
     ignorePaths: run.ignorePaths,
+    skills: run.skills,
   };
 }
 
@@ -643,6 +652,9 @@ async function startAgent(
   const diffText = c.isPr ? await (await env.ARTIFACTS.get(`runs/${c.runId}/pr.diff`))?.text() : null;
   await sb.writeText(DIFF_PATH, diffText ?? "(no pull request diff: manual branch review)\n");
   await sb.writeText(FINDINGS_PATH, JSON.stringify(findingsJson, null, 2));
+  const skills = await loadRunSkills(db, c);
+  const skillFiles = planSkillFiles(skills, provider);
+  for (const f of skillFiles.files) await sb.writeText(f.path, f.content);
   await sb.writeText(
     PROMPT_PATH,
     buildPrompt({
@@ -659,6 +671,7 @@ async function startAgent(
       instructions: c.instructions,
       focus: c.focus,
       ignorePaths: c.ignorePaths,
+      skills: skillFiles.listed,
     }),
   );
 
@@ -682,6 +695,48 @@ async function startAgent(
     `AI review started with ${AGENT_INFO[provider].label} (${CREDENTIAL_INFO[kind].label}), ${findingsJson.length} scanner finding(s) to triage`,
   );
   return { ok: true, findingIds: ordered.map((f) => f.id) };
+}
+
+/**
+ * The run's review skills: built-ins from core, user skills from D1 by id
+ * and owner (the repository owner's own skills only), in selection order and
+ * within the agent's text budget. Missing and skipped skills are logged.
+ */
+async function loadRunSkills(db: Db, c: RunContext): Promise<RunSkill[]> {
+  const ids = c.skills ?? [];
+  if (!ids.length) return [];
+  const userIds = ids.filter((id) => !isBuiltinSkillId(id));
+  const rows = new Map<string, RunSkill>();
+  for (const part of chunk(userIds, 90)) {
+    const found = await db.query.reviewSkill.findMany({
+      where: and(eq(schema.reviewSkill.userId, c.userId), inArray(schema.reviewSkill.id, part)),
+      columns: { id: true, name: true, description: true, body: true },
+    });
+    for (const r of found) rows.set(r.id, r);
+  }
+  const selected: RunSkill[] = [];
+  let missing = 0;
+  for (const id of ids) {
+    const skill = isBuiltinSkillId(id) ? builtinSkill(id) : rows.get(id);
+    if (skill) selected.push({ name: skill.name, description: skill.description, body: skill.body });
+    else missing++;
+  }
+  const { included, skipped } = fitSkillsToBudget(selected, SKILL_LIMITS.runBudget);
+  if (missing) {
+    await logRun(db, c.runId, "warn", `${missing} review skill(s) were deleted after this review was queued and were left out`);
+  }
+  if (skipped.length) {
+    await logRun(
+      db,
+      c.runId,
+      "warn",
+      `Review skills over the ${SKILL_LIMITS.runBudget / 1024} KB budget were left out: ${skipped.map((s) => s.name).join(", ")}`,
+    );
+  }
+  if (included.length) {
+    await logRun(db, c.runId, "info", `Review skills: ${included.map((s) => s.name).join(", ")}`);
+  }
+  return included;
 }
 
 async function collectAgent(
