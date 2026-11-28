@@ -112,7 +112,7 @@ export const getSkill = createServerFn({ method: "GET" })
 
 /**
  * Fetch a skill from a URL for the user to review before saving. Runs on the
- * server: https only, allowlisted hosts and redirects, 10s, 64 KB, text only.
+ * server: https only, allowlisted hosts and redirects, 10s, SKILL_LIMITS.download, text only.
  */
 export const previewSkillUrl = createServerFn({ method: "POST" })
   .validator((url: string) => {

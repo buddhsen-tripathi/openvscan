@@ -112,7 +112,7 @@ const oneLine = (s: string, max: number) => clip(s.replace(/[\s`]+/g, " ").trim(
 export function skillsPromptSection(skills: PromptSkill[]): string {
   if (!skills.length) return "";
   const list = skills
-    .map((s) => `- **${oneLine(s.name, 80)}** (\`${s.path}\`)${s.description ? `: ${oneLine(s.description, 300)}` : ""}`)
+    .map((s) => `- **${oneLine(s.name, 80)}** (\`${s.path}\`)${s.description ? `: ${oneLine(s.description, 1024)}` : ""}`)
     .join("\n");
   return `\n## Review skills (trusted, from the repository owner)
 The owner attached these review skills. Read each one whose description matches what this change touches, and apply its checks alongside the steps above:

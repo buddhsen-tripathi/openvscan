@@ -23,18 +23,22 @@ export const SKILL_SOURCE_INFO: Record<SkillSource, string> = {
 export const SKILL_LIMITS = {
   /** Characters. */
   name: 80,
-  /** Characters. */
-  description: 300,
-  /** UTF-8 bytes of the body (frontmatter excluded). */
-  body: 64 * 1024,
+  /** Characters (Anthropic's skill format allows 1024). */
+  description: 1024,
+  /**
+   * UTF-8 bytes of the body (frontmatter excluded). Generous: the agent
+   * opens a skill's file only when its description fits the change, so size
+   * costs nothing until it's used. Real skills reach ~100 KB.
+   */
+  body: 256 * 1024,
   /** UTF-8 bytes downloaded by a URL import, frontmatter included. */
-  download: 64 * 1024,
+  download: 264 * 1024,
   /** Skills per account. */
   perUser: 50,
   /** Skills selected on one repository. */
   perRepo: 20,
   /** UTF-8 bytes of skill text handed to the agent in one run. */
-  runBudget: 120 * 1024,
+  runBudget: 1024 * 1024,
 } as const;
 
 /** Repository and run skill lists reference built-ins as `builtin:<slug>`. */

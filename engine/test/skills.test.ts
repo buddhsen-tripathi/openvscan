@@ -42,7 +42,7 @@ describe("normalisation", () => {
   });
 
   it("caps name and description, rejects empty and oversized bodies", () => {
-    const s = normalizeSkill({ name: "n".repeat(200), description: "d".repeat(400), body: " hi " });
+    const s = normalizeSkill({ name: "n".repeat(200), description: "d".repeat(2000), body: " hi " });
     expect(s.name).toHaveLength(SKILL_LIMITS.name);
     expect(s.description).toHaveLength(SKILL_LIMITS.description);
     expect(s.body).toBe("hi");
