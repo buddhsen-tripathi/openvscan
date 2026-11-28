@@ -2,6 +2,7 @@ import {
   BUILTIN_SKILLS,
   builtinSkill,
   builtinSkillId,
+  countInvisible,
   decodeSkillBytes,
   fitSkillsToBudget,
   importSkillFromUrl,
@@ -27,6 +28,8 @@ describe("normalisation", () => {
     const tag = String.fromCodePoint(0xe0041, 0xe0042); // tag "A", "B"
     const dirty = `﻿run​ ok‮⁦ x⁩⁠${tag}!`;
     expect(stripInvisible(dirty)).toBe("run ok x!");
+    expect(countInvisible(dirty)).toBe(7);
+    expect(countInvisible("\uFEFF# plain")).toBe(0);
   });
 
   it("unifies line endings and drops control characters", () => {
@@ -230,6 +233,7 @@ describe("importSkillFromUrl", () => {
       description: "",
       body: "Use params.",
       sourceUrl: "https://gist.githubusercontent.com/bob/abc/raw/123/sql.md",
+      hiddenChars: 0,
     });
   });
 

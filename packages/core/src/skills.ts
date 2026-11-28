@@ -73,6 +73,14 @@ export function stripInvisible(text: string): string {
   return text.replace(INVISIBLE, "");
 }
 
+/**
+ * How many invisible, bidi-control or tag characters `text` holds. Normal
+ * markdown has none (a leading BOM aside), so a count is worth showing.
+ */
+export function countInvisible(text: string): number {
+  return (text.replace(/^\uFEFF/, "").match(INVISIBLE) ?? []).length;
+}
+
 /** Multi-line text: LF line endings, no invisible or control characters. */
 export function normalizeSkillText(text: string): string {
   return stripInvisible(text.replace(/\r\n?/g, "\n")).replace(CONTROL, "");

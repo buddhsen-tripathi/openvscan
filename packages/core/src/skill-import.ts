@@ -1,4 +1,5 @@
 import {
+  countInvisible,
   decodeSkillBytes,
   isTextContentType,
   normalizeSkill,
@@ -31,6 +32,8 @@ export interface ImportOptions {
 export interface ImportedSkill extends SkillContent {
   /** The file the content came from (after mapping and redirects). */
   sourceUrl: string;
+  /** Invisible / bidi / tag characters that were removed. */
+  hiddenChars: number;
 }
 
 const MAX_REDIRECTS = 5;
@@ -122,6 +125,7 @@ function toSkill(text: string, sourceUrl: string, fallbackName: string): Importe
       body: parsed.body,
     }),
     sourceUrl,
+    hiddenChars: countInvisible(text),
   };
 }
 
