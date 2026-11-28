@@ -38,11 +38,16 @@ export function parseGitleaks(raw: string): NormalizedFinding[] {
 
 export const gitleaks: ScannerSpec = {
   argv: [
+    "sh",
+    "-c",
+    // Gitleaks always reads a .gitleaksignore at the root of the directory it
+    // scans, whatever --gitleaks-ignore-path says, and fingerprints use the
+    // predictable sandbox path: a pull request could list its own leak there.
+    'rm -f "$1/.gitleaksignore" && exec gitleaks dir "$@"',
     "gitleaks",
-    "dir",
     REPO_DIR,
-    // The release's own default rules: a .gitleaks.toml, .gitleaksignore or
-    // `gitleaks:allow` comment in the pull request can't hide a secret.
+    // The release's own default rules: a .gitleaks.toml or `gitleaks:allow`
+    // comment in the pull request can't hide a secret either.
     "--config",
     "/opt/gitleaks.toml",
     "--gitleaks-ignore-path",
